@@ -1391,8 +1391,13 @@ apply();
 
 // Ratings widget — loads after the walk list so every details block has
 // a <div data-ratings-for="{id}"> slot ready.
-window.__SUPABASE_URL__      = "__SUPABASE_URL__";
-window.__SUPABASE_ANON_KEY__ = "__SUPABASE_ANON_KEY__";
+// Placeholders __INJECT_SUPABASE_URL__ / __INJECT_SUPABASE_ANON_KEY__
+// are substituted at build time by build_gui.py. The VARIABLE NAMES
+// (window.__SUPABASE_URL__ etc.) must NOT match the placeholder tokens,
+// otherwise Python's str.replace() rewrites them too and we get
+// `window. = "…"` — which is a syntax error that kills the whole script.
+window.__SUPABASE_URL__      = "__INJECT_SUPABASE_URL__";
+window.__SUPABASE_ANON_KEY__ = "__INJECT_SUPABASE_ANON_KEY__";
 </script>
 <script src="ratings.js"></script>
 <script>
@@ -1418,8 +1423,8 @@ HTML = (HTML
     .replace("__TAGS_JSON__", json.dumps(all_tags, ensure_ascii=False))
     .replace("__REGION_ACCENT_JSON__", json.dumps(region_accent_js, ensure_ascii=False))
     .replace("__REGION_SHORT_JSON__", json.dumps(region_short_js, ensure_ascii=False))
-    .replace("__SUPABASE_URL__", SUPABASE_URL)
-    .replace("__SUPABASE_ANON_KEY__", SUPABASE_ANON_KEY)
+    .replace("__INJECT_SUPABASE_URL__", SUPABASE_URL)
+    .replace("__INJECT_SUPABASE_ANON_KEY__", SUPABASE_ANON_KEY)
 )
 
 with open(OUT, "w", encoding="utf-8") as f:
