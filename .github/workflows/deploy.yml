@@ -1,6 +1,6 @@
-# Rebuilds the walks spreadsheet and HTML app, then publishes to GitHub Pages.
-# Runs automatically on every push to `main` — and can be triggered manually
-# from the Actions tab.
+# Rebuilds the walks spreadsheet, fetches Geograph photos, builds the HTML
+# app, then publishes to GitHub Pages. Runs on every push to `main` and can
+# be triggered manually from the Actions tab.
 name: Build & deploy walks app
 
 on:
@@ -30,18 +30,43 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install openpyxl
+        run: pip install openpyxl jsonschema
+
+      - name: Validate walks/*.json against schema
+        # Fail fast: if any walk JSON is malformed, every later step is wasted.
+        run: python scripts/validate_walks.py
 
       - name: Build the spreadsheet
         run: python build_walks.py
 
+      # Cache Geograph photo lookups between runs so we only hit the
+      # Geograph API when the walk source changes.
+      - name: Restore Geograph photo cache
+        id: photos-cache
+        uses: actions/cache@v4
+        with:
+          path: photos_cache.json
+          key: photos-${{ hashFiles('build_walks.py') }}
+          restore-keys: |
+            photos-
+
+      - name: Fetch Geograph photos
+        continue-on-error: true
+        run: python fetch_photos.py
+
       - name: Build the web app (index.html)
+        env:
+          # Both are safe to expose to browsers. Anon key is designed for
+          # client-side use; row-level security policies do the protection.
+          SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: python build_gui.py
 
       - name: Stage site files
         run: |
           mkdir -p _site
           cp index.html _site/index.html
+          cp ratings.js _site/ratings.js
           cp South_Wales_Walks_Database.xlsx _site/South_Wales_Walks_Database.xlsx
 
       - name: Upload Pages artifact
