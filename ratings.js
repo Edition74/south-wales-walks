@@ -297,6 +297,10 @@
   window.ratings = {
     init,
     renderInto,
+    // Public hook for the finder: call this after apply() re-renders the
+    // walk list, otherwise newly-inserted [data-ratings-for] containers
+    // stay empty because refreshAllWidgets only runs at init-time.
+    refreshAll: refreshAllWidgets,
     getAggregate: (walkId) => state.aggregates.get(walkId) || null,
   };
 })();
