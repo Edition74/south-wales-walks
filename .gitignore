@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+Thumbs.db
+_site/
+# photos_cache.json is populated in CI by fetch_photos.py and
+# persisted between runs via actions/cache — don't commit it.
+photos_cache.json
