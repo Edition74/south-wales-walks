@@ -274,8 +274,14 @@ def pick_images(tags, region, walk_id):
     return [u(pid, w=800, q=70) for pid in picked[:3]]
 
 
-# Populate each walk's gallery now that the helpers and REGION_META are defined.
-# Prefer real Geograph photos when cached; otherwise fall back to Unsplash.
+# Populate each walk's gallery from the Geograph cache. Walks without cached
+# photos get an EMPTY gallery rather than a random Unsplash fallback — stock
+# photos keyed on tags produced jarring mismatches ("Abbey / Church" → clown
+# masks, pyramids, honeycomb, etc.) because Unsplash occasionally recycles
+# photo IDs. "No photos" is a far better failure mode than "wrong photos".
+#
+# To populate galleries, run the GitHub Actions workflow — fetch_photos.py
+# pulls real CC-BY-SA 2.0 photos from Geograph geographically near each walk.
 geo_used = 0
 for rec in data:
     cached = _photo_cache.get(str(rec.get("id")), {}).get("photos") or []
@@ -294,9 +300,10 @@ for rec in data:
         ]
         geo_used += 1
     else:
-        rec["images"] = pick_images(rec.get("tags", []), rec.get("region"), rec.get("id"))
+        # Intentionally empty — no stock-photo fallback.
+        rec["images"] = []
         rec["photo_credits"] = []
-print(f"  using Geograph photos: {geo_used}/{len(data)}; Unsplash fallback: {len(data) - geo_used}")
+print(f"  using Geograph photos: {geo_used}/{len(data)}; no photos: {len(data) - geo_used}")
 
 
 # ---------------------------------------------------------------------------
