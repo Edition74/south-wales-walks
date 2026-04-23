@@ -1385,6 +1385,11 @@ function render(list){
   $("#hint").textContent = list.length === WALKS.length
     ? "showing all"
     : `of ${WALKS.length}`;
+  // Re-paint ratings widgets after every filter/search — apply() replaces
+  // #results.innerHTML, so every card that appears gets a fresh empty
+  // .walk-ratings container. Without this call, only the cards rendered
+  // at init-time ever show the ratings summary and sign-in form.
+  if (window.ratings && window.ratings.refreshAll) window.ratings.refreshAll();
 }
 
 apply();
