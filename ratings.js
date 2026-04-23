@@ -43,13 +43,18 @@
   async function loadSupabaseLib() {
     if (window.supabase && window.supabase.createClient) return window.supabase;
     // jsDelivr mirror — pinned major version so a breaking release won't
-    // silently break the site.
+    // silently break the site. 8s timeout so we never hang init() forever
+    // when jsDelivr is slow or blocked (corporate proxies, ad-blockers that
+    // mis-classify the CDN, offline previews, etc).
     const url = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js";
     return new Promise((resolve, reject) => {
       const s = document.createElement("script");
       s.src = url; s.async = true;
-      s.onload = () => resolve(window.supabase);
-      s.onerror = () => reject(new Error("Failed to load Supabase client"));
+      let settled = false;
+      const finish = (fn, v) => { if (!settled) { settled = true; fn(v); } };
+      s.onload  = () => finish(resolve, window.supabase);
+      s.onerror = () => finish(reject, new Error("Failed to load Supabase client"));
+      setTimeout(() => finish(reject, new Error("Supabase client load timed out after 8s")), 8000);
       document.head.appendChild(s);
     });
   }
@@ -76,6 +81,12 @@
   }
 
   async function signIn(email, redirectTo) {
+    // Guard against the early-render case: refreshAllWidgets paints the
+    // sign-in form before loadSupabaseLib() resolves, so state.client can
+    // still be null if the user clicks "Email me a link" immediately.
+    if (!state.client) {
+      return new Error("Ratings system still loading — please try again in a moment.");
+    }
     const { error } = await state.client.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: redirectTo || window.location.href },
@@ -258,7 +269,12 @@
 
   // ---------- Init ----------
   async function init() {
-    if (!CONFIGURED) { refreshAllWidgets(); return; }
+    // Render IMMEDIATELY with whatever we have (likely nothing) so every
+    // walk shows at least the "Walker ratings: ☆☆☆☆☆ (0)" summary and a
+    // sign-in form. Without this first paint, a slow Supabase lib load
+    // leaves every ratings slot a mysterious empty rectangle.
+    refreshAllWidgets();
+    if (!CONFIGURED) return;
     try {
       const sup = await loadSupabaseLib();
       state.client = sup.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -274,6 +290,7 @@
     } catch (err) {
       console.warn("[ratings] init failed, falling back to disabled state:", err);
     }
+    // Final repaint with aggregates + any existing user ratings.
     refreshAllWidgets();
   }
 
