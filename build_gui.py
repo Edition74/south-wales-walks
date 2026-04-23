@@ -12,6 +12,7 @@ mobile-first web app in an editorial/outdoor-tourism visual style:
 import datetime
 import html
 import json
+import os
 import re
 from pathlib import Path
 from openpyxl import load_workbook
@@ -19,6 +20,22 @@ from openpyxl import load_workbook
 HERE = Path(__file__).parent
 XLSX = HERE / "South_Wales_Walks_Database.xlsx"
 OUT  = HERE / "index.html"
+PHOTOS_CACHE = HERE / "photos_cache.json"
+
+# Ratings backend — injected into the client bundle. Safe to be public: the
+# anon key is designed for browsers (row-level security is what keeps the
+# data safe). Set as GitHub Actions secrets for the production build.
+SUPABASE_URL      = os.environ.get("SUPABASE_URL",      "")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+
+# Optional: real Geograph photo cache keyed by walk ID. Populated by fetch_photos.py.
+# When present and a walk has photos, they replace the generic Unsplash gallery.
+try:
+    _photo_cache = json.loads(PHOTOS_CACHE.read_text(encoding="utf-8")).get("walks", {}) \
+        if PHOTOS_CACHE.exists() else {}
+except Exception:
+    _photo_cache = {}
+print(f"Loaded {sum(1 for v in _photo_cache.values() if v.get('photos'))} walks with Geograph photos")
 
 wb = load_workbook(XLSX, data_only=True)
 ws = wb["Walks"]
@@ -137,6 +154,7 @@ def short(row):
         "drive": row["Drive from Monmouth (mins)"],
         "tags": row["tags"],
         "images": [],  # filled in below once REGION_META/PHOTO_BANK are defined
+        "photo_credits": [],  # filled in below if Geograph cache has entries
     }
 
 data = [short(w) for w in walks]
@@ -256,9 +274,29 @@ def pick_images(tags, region, walk_id):
     return [u(pid, w=800, q=70) for pid in picked[:3]]
 
 
-# Populate each walk's gallery now that the helpers and REGION_META are defined
+# Populate each walk's gallery now that the helpers and REGION_META are defined.
+# Prefer real Geograph photos when cached; otherwise fall back to Unsplash.
+geo_used = 0
 for rec in data:
-    rec["images"] = pick_images(rec.get("tags", []), rec.get("region"), rec.get("id"))
+    cached = _photo_cache.get(str(rec.get("id")), {}).get("photos") or []
+    if cached:
+        rec["images"] = [p["url"] for p in cached[:3]]
+        rec["photo_credits"] = [
+            {
+                "photographer": p.get("photographer", ""),
+                "page_url":     p.get("page_url", ""),
+                "title":        p.get("title", ""),
+                "license":      p.get("license", "CC BY-SA 2.0"),
+                "license_url":  p.get("license_url", "https://creativecommons.org/licenses/by-sa/2.0/"),
+                "source":       p.get("source", "Geograph Britain and Ireland"),
+            }
+            for p in cached[:3]
+        ]
+        geo_used += 1
+    else:
+        rec["images"] = pick_images(rec.get("tags", []), rec.get("region"), rec.get("id"))
+        rec["photo_credits"] = []
+print(f"  using Geograph photos: {geo_used}/{len(data)}; Unsplash fallback: {len(data) - geo_used}")
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +375,7 @@ def featured_card(w):
     accent = REGION_META.get(w["region"], {}).get("accent", "#4a6b3e")
     short_reg = REGION_META.get(w["region"], {}).get("short", w["region"])
     return f'''
-    <article class="feat" style="--img:url('{w["image"]}');--accent:{accent}">
+    <button class="feat" type="button" data-walk-name="{esc(w["name"])}" style="--img:url('{w["image"]}');--accent:{accent}" aria-label="Open walk: {esc(w["name"])}">
       <span class="region-chip">{esc(w["kicker"])} &middot; {esc(short_reg)}</span>
       <h3>{esc(w["name"])}</h3>
       <div class="f-stats">
@@ -346,7 +384,8 @@ def featured_card(w):
         <span><b>{w["time"]}</b>hrs</span>
         <span><b>{w["difficulty"]}</b></span>
       </div>
-    </article>'''
+      <span class="feat-cta">View walk →</span>
+    </button>'''
 
 def region_tile(t):
     return f'''
@@ -543,7 +582,15 @@ nav.site{
   transition:transform .35s cubic-bezier(.2,.7,.2,1),box-shadow .35s;
   box-shadow:var(--shadow-md);
   isolation:isolate;
+  border:0;font:inherit;cursor:pointer;text-align:left;width:100%;
 }
+.feat:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+.feat-cta{
+  margin-top:1rem;display:inline-flex;align-items:center;gap:.4rem;
+  font-size:.75rem;letter-spacing:.14em;text-transform:uppercase;font-weight:700;
+  color:var(--amber);opacity:.85;transition:opacity .2s,transform .3s;
+}
+.feat:hover .feat-cta{opacity:1;transform:translateX(3px)}
 .feat::before{
   content:"";position:absolute;inset:0;z-index:-2;
   background-image:var(--img);background-size:cover;background-position:center;
@@ -783,6 +830,40 @@ details.more dd{margin:0;color:var(--ink-soft);font-size:.84rem;line-height:1.5}
 .walk-map-links a{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;
   color:var(--bracken);font-weight:700;padding:.2rem 0}
 .walk-map-links a:hover{color:var(--bracken-dark);text-decoration:underline}
+.walk-credits{font-size:.7rem;color:var(--muted);margin:.3rem 0 .6rem;line-height:1.4}
+.walk-credits a{color:var(--muted);text-decoration:underline;text-decoration-color:var(--stone)}
+.walk-credits a:hover{color:var(--bracken)}
+.walk-credits strong{color:var(--ink-soft);font-weight:600}
+
+/* ─── Ratings widget ─────────────────────────────────────── */
+.walk-ratings{margin:1rem 0 .3rem;padding:.9rem 1rem;border:1px solid var(--stone);border-radius:10px;background:rgba(255,255,255,.55)}
+.r-summary{display:flex;align-items:center;gap:.6rem;margin-bottom:.55rem;font-size:.88rem}
+.r-summary strong{font-weight:600;color:var(--ink-soft)}
+.r-stars{font-size:1.05rem;letter-spacing:.08em;color:var(--bracken);line-height:1}
+.r-stars-empty{color:var(--stone)}
+.r-count{font-size:.8rem;color:var(--muted);margin-left:.2rem}
+.r-notice{font-size:.78rem;color:var(--muted);font-style:italic}
+.r-hint{font-size:.82rem;color:var(--muted);margin:.1rem 0 .5rem}
+.r-form .r-input, .r-form .r-comment, .r-form .r-actions{margin:.35rem 0}
+.r-input{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
+.r-input-label{display:inline-block;min-width:9rem;font-size:.82rem;color:var(--ink-soft);font-weight:500}
+.r-star{background:none;border:0;cursor:pointer;font-size:1.15rem;line-height:1;padding:2px 3px;color:var(--stone);transition:color .15s}
+.r-star.r-on,.r-star:hover{color:var(--bracken)}
+.r-star:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:3px}
+.r-comment{display:flex;flex-direction:column;gap:.25rem;margin-top:.55rem}
+.r-comment span{font-size:.78rem;color:var(--muted)}
+.r-comment em{font-style:italic;color:var(--muted)}
+.r-comment textarea{font:inherit;font-size:.85rem;padding:.5rem .6rem;border:1px solid var(--stone);border-radius:6px;resize:vertical;min-height:60px;background:#fff}
+.r-actions{display:flex;align-items:center;gap:.6rem;margin-top:.5rem;flex-wrap:wrap}
+.r-save{background:var(--moss);color:#fff;border:0;padding:.45rem .95rem;border-radius:6px;font-size:.82rem;font-weight:600;cursor:pointer;letter-spacing:.05em}
+.r-save:hover{background:var(--moss-dark)}
+.r-signout{background:none;border:0;color:var(--muted);font-size:.78rem;cursor:pointer;text-decoration:underline}
+.r-signout:hover{color:var(--ink-soft)}
+.r-status{font-size:.78rem;color:var(--moss-dark);font-style:italic}
+.r-signin .r-email{display:flex;gap:.4rem;flex-wrap:wrap}
+.r-signin input[type=email]{flex:1 1 14rem;font:inherit;font-size:.85rem;padding:.45rem .6rem;border:1px solid var(--stone);border-radius:6px;background:#fff}
+.r-signin button{background:var(--bracken);color:#fff;border:0;padding:.45rem .95rem;border-radius:6px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap}
+.r-signin button:hover{background:var(--bracken-dark)}
 
 /* ─── Footer ─────────────────────────────────────────────── */
 footer.site{background:var(--slate);color:var(--cream);padding:3.5rem 0 2rem;margin-top:0}
@@ -1079,6 +1160,25 @@ $$('.region-tile').forEach(t => t.addEventListener('click', () => {
   document.getElementById("finder").scrollIntoView({behavior:"smooth"});
 }));
 
+// Featured cards → search by walk name, scroll to finder, auto-open details
+$$('.feat').forEach(card => card.addEventListener('click', () => {
+  const name = card.dataset.walkName;
+  if (!name) return;
+  reset();
+  $("#search").value = name;
+  apply();
+  document.getElementById("finder").scrollIntoView({behavior:"smooth"});
+  setTimeout(() => {
+    const target = [...document.querySelectorAll('#results .card')]
+      .find(c => c.querySelector('h3')?.textContent === name);
+    if (target){
+      const det = target.querySelector('details.more');
+      if (det) det.open = true;
+      target.scrollIntoView({behavior:"smooth", block:"center"});
+    }
+  }, 400);
+}));
+
 function reset(){
   $("#search").value = "";
   $$(".chip.on").forEach(c => c.classList.remove("on"));
@@ -1161,10 +1261,16 @@ function walkCard(w){
   const accent = accentFor(w.region);
   const short  = shortFor(w.region);
   const imgs = (w.images || []).slice(0,3);
+  const credits = (w.photo_credits || []).slice(0,3);
   const galleryHtml = imgs.length
     ? `<div class="walk-gallery">${imgs.map((src,i) =>
         `<img loading="lazy" src="${esc(src)}" alt="${esc(w.name)} — scenery ${i+1}" onerror="this.style.visibility='hidden'">`
       ).join("")}</div>`
+    : "";
+  const creditHtml = credits.length
+    ? `<div class="walk-credits">Photos: ${credits.map(c =>
+        `<a href="${esc(c.page_url)}" target="_blank" rel="noopener noreferrer">${esc(c.title || 'photo')}</a> &copy; <strong>${esc(c.photographer)}</strong>`
+      ).join(" · ")} &middot; <a href="${esc(credits[0].license_url)}" target="_blank" rel="noopener noreferrer">${esc(credits[0].license)}</a>, via ${esc(credits[0].source)}.</div>`
     : "";
   const mapQ = encodeURIComponent([w.postcode, w.name, "UK"].filter(Boolean).join(", "));
   const mapEmbed = w.postcode
@@ -1197,6 +1303,7 @@ function walkCard(w){
           <details class="more">
             <summary>Details</summary>
             ${galleryHtml}
+            ${creditHtml}
             ${mapEmbed}
             <dl>
               <dt>Start</dt><dd>${esc(w.parking || '—')} (${esc(w.postcode || '—')})</dd>
@@ -1215,6 +1322,7 @@ function walkCard(w){
               <dt>Public transport</dt><dd>${esc(w.transport || '—')}</dd>
               <dt>Hazards / notes</dt><dd>${esc(w.notes || '—')}</dd>
             </dl>
+            <div class="walk-ratings" data-ratings-for="${w.id}"></div>
           </details>
         </div>
       </div>
@@ -1280,6 +1388,15 @@ function render(list){
 }
 
 apply();
+
+// Ratings widget — loads after the walk list so every details block has
+// a <div data-ratings-for="{id}"> slot ready.
+window.__SUPABASE_URL__      = "__SUPABASE_URL__";
+window.__SUPABASE_ANON_KEY__ = "__SUPABASE_ANON_KEY__";
+</script>
+<script src="ratings.js"></script>
+<script>
+if (window.ratings) window.ratings.init();
 </script>
 </body>
 </html>
@@ -1301,6 +1418,8 @@ HTML = (HTML
     .replace("__TAGS_JSON__", json.dumps(all_tags, ensure_ascii=False))
     .replace("__REGION_ACCENT_JSON__", json.dumps(region_accent_js, ensure_ascii=False))
     .replace("__REGION_SHORT_JSON__", json.dumps(region_short_js, ensure_ascii=False))
+    .replace("__SUPABASE_URL__", SUPABASE_URL)
+    .replace("__SUPABASE_ANON_KEY__", SUPABASE_ANON_KEY)
 )
 
 with open(OUT, "w", encoding="utf-8") as f:

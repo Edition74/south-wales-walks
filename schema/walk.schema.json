@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edition74.github.io/south-wales-walks/schema/walk.schema.json",
+  "title": "Walk",
+  "description": "Canonical record for a single walk in the South Wales Walks database. One JSON file per walk; filename is walks/{id:03d}-{slug}.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "region",
+    "distance_mi",
+    "difficulty",
+    "route_type",
+    "highlights",
+    "parking_start",
+    "start_postcode"
+  ],
+  "properties": {
+    "id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Stable numeric ID. Never reuse a retired id."
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "URL-safe kebab-case slug derived from name. Stored for convenience; regenerated on build."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 3
+    },
+    "region": {
+      "type": "string",
+      "enum": [
+        "Brecon Beacons / Bannau Brycheiniog",
+        "Gower & Swansea Bay",
+        "Pembrokeshire (South)",
+        "Valleys & Vale of Glamorgan",
+        "Wye Valley & Monmouthshire",
+        "Mid Wales (Powys & Ceredigion)",
+        "Carmarthenshire & West Wales",
+        "English Borders (Forest of Dean & Herefordshire)"
+      ]
+    },
+    "sub_area":     { "type": ["string", "null"] },
+    "nearest_town": { "type": ["string", "null"] },
+
+    "distance_mi":      { "type": "number", "exclusiveMinimum": 0, "maximum": 100 },
+    "elevation_gain_m": { "type": ["integer", "null"], "minimum": 0, "maximum": 3000 },
+    "est_time_hrs":     { "type": ["number", "null"],  "exclusiveMinimum": 0, "maximum": 24 },
+
+    "difficulty": {
+      "type": "string",
+      "enum": ["Easy", "Easy/Moderate", "Moderate", "Moderate/Hard", "Hard", "Strenuous"]
+    },
+    "route_type": {
+      "type": "string",
+      "description": "Base value (Loop, Linear, Out-and-back, Figure of 8) optionally followed by a parenthetical note, e.g. 'Linear (train back)'.",
+      "pattern": "^(Loop|Linear|Out-and-back|Figure of 8)(\\s*\\(.+\\))?$"
+    },
+    "terrain": { "type": ["string", "null"] },
+
+    "dogs_allowed": {
+      "type": "string",
+      "description": "Starts with Yes | No | Partial; optional parenthetical or short clause after.",
+      "pattern": "^(Yes|No|Partial)([\\s(].+)?$"
+    },
+    "dog_lead_policy":   { "type": ["string", "null"] },
+    "pushchair_friendly": {
+      "type": "string",
+      "description": "Starts with Yes | No | Partial; optional parenthetical detail.",
+      "pattern": "^(Yes|No|Partial)(\\s*\\(.+\\))?$"
+    },
+    "waymarked": {
+      "type": "string",
+      "description": "Starts with Yes | No | Partial; optional parenthetical trail name (Wales Coast Path, Offa's Dyke, etc).",
+      "pattern": "^(Yes|No|Partial)(\\s*\\(.+\\))?$"
+    },
+    "best_season":       { "type": ["string", "null"] },
+
+    "highlights":       { "type": "string", "minLength": 5 },
+    "points_of_interest": { "type": ["string", "null"] },
+    "viewpoints":       { "type": ["string", "null"] },
+    "water_features":   { "type": ["string", "null"] },
+    "picnic_spots":     { "type": ["string", "null"] },
+
+    "parking_start":   { "type": "string", "minLength": 3 },
+    "food_drink_nearby":{ "type": ["string", "null"] },
+    "toilets":         { "type": ["string", "null"] },
+    "public_transport":{ "type": ["string", "null"] },
+    "hazards_notes":   { "type": ["string", "null"] },
+
+    "start_postcode": {
+      "type": "string",
+      "pattern": "^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$",
+      "description": "UK postcode, uppercased. Used for map links and Geograph photo lookup."
+    },
+    "drive_from_monmouth_mins": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 600
+    }
+  }
+}
