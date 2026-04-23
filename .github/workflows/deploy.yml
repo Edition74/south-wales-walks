@@ -40,15 +40,18 @@ jobs:
         run: python build_walks.py
 
       # Cache Geograph photo lookups between runs so we only hit the
-      # Geograph API when the walk source changes.
+      # Geograph API when something relevant changes. Cache key busts on any
+      # change to the walk source OR the fetch script itself, so bug-fixes
+      # to fetch_photos.py force a clean refetch. The "v2" prefix sidesteps
+      # the old v1 cache whose entries used a broken q=<postcode> query.
       - name: Restore Geograph photo cache
         id: photos-cache
         uses: actions/cache@v4
         with:
           path: photos_cache.json
-          key: photos-${{ hashFiles('build_walks.py') }}
+          key: photos-v2-${{ hashFiles('fetch_photos.py', 'walks/*.json') }}
           restore-keys: |
-            photos-
+            photos-v2-
 
       - name: Fetch Geograph photos
         continue-on-error: true
@@ -58,6 +61,7 @@ jobs:
         env:
           # Both are safe to expose to browsers. Anon key is designed for
           # client-side use; row-level security policies do the protection.
+          # Add these at Settings -> Secrets and variables -> Actions.
           SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: python build_gui.py
