@@ -1,6 +1,6 @@
-# Rebuilds the walks spreadsheet, fetches Geograph photos, builds the HTML
-# app, then publishes to GitHub Pages. Runs on every push to `main` and can
-# be triggered manually from the Actions tab.
+# Rebuilds the walks spreadsheet, fetches Wikimedia Commons photos, builds
+# the HTML app, then publishes to GitHub Pages. Runs on every push to `main`
+# and can be triggered manually from the Actions tab.
 name: Build & deploy walks app
 
 on:
@@ -39,21 +39,22 @@ jobs:
       - name: Build the spreadsheet
         run: python build_walks.py
 
-      # Cache Geograph photo lookups between runs so we only hit the
-      # Geograph API when something relevant changes. Cache key busts on any
+      # Cache photo lookups between runs so we only hit the Wikimedia
+      # Commons API when something relevant changes. Cache key busts on any
       # change to the walk source OR the fetch script itself, so bug-fixes
-      # to fetch_photos.py force a clean refetch. The "v2" prefix sidesteps
-      # the old v1 cache whose entries used a broken q=<postcode> query.
-      - name: Restore Geograph photo cache
+      # to fetch_photos.py force a clean refetch. The "v3" prefix sidesteps
+      # both the v1 (broken Geograph q=postcode) and v2 (Geograph ll=
+      # silently empty) caches, which are full of empties.
+      - name: Restore photo cache
         id: photos-cache
         uses: actions/cache@v4
         with:
           path: photos_cache.json
-          key: photos-v2-${{ hashFiles('fetch_photos.py', 'walks/*.json') }}
+          key: photos-v3-${{ hashFiles('fetch_photos.py', 'walks/*.json') }}
           restore-keys: |
-            photos-v2-
+            photos-v3-
 
-      - name: Fetch Geograph photos
+      - name: Fetch Wikimedia Commons photos
         continue-on-error: true
         run: python fetch_photos.py
 

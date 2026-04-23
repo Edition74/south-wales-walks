@@ -1,21 +1,22 @@
-"""Pre-fetch Geograph.org.uk photos for every walk and cache them.
+"""Pre-fetch Wikimedia Commons photos for every walk and cache them.
 
-Geograph is a volunteer archive of ~7 million geotagged UK photos, CC-BY-SA 2.0.
-This script reads the walks spreadsheet, converts each walk's postcode into
-latitude/longitude via postcodes.io (free, no auth), then queries Geograph's
-public syndicator with `ll=<lat>,<lon>`. Up to 3 photo URLs + photographer
-credits are stored in `photos_cache.json` at the repo root.
+Wikimedia Commons has excellent UK landscape coverage (much of Geograph has
+been bulk-imported there) with a reliable, free, well-documented API. For
+each walk we:
+  1. Convert the start postcode -> lat/lon via postcodes.io (free, no auth).
+  2. Use Commons' `list=geosearch` to find image files near that point.
+  3. Fetch `imageinfo` with extmetadata to get URLs, author, licence.
+  4. Keep only real photos (image/jpeg), filter out maps/logos/diagrams,
+     cache the top N in `photos_cache.json`.
 
-Why this way:
-  * The syndicator's `q` parameter is a freeform full-text search — passing a
-    raw postcode returns 0 matches or an unrelated UK-wide fallback. Geograph
-    actually wants geographic coordinates (`ll` or `en`).
-  * postcodes.io is the canonical free UK postcode → lat/lon service (Ordnance
-    Survey data, maintained by MySociety's Ideal Postcodes spin-off). No key,
-    no rate limits for our volume.
+Why Commons (not Geograph):
+  The Geograph syndicator's public endpoint silently returns 0 results for
+  `ll=<lat>,<lon>` queries even in photo-dense areas like the Brecon Beacons.
+  Commons' `geosearch` is the same idea but actually works, and it exposes
+  most Geograph photos anyway via the long-running Commons:Geograph import.
 
-Attribution: CC-BY-SA 2.0 requires credit. We always render the photographer
-name with a link to the Geograph page for that photo.
+Attribution: required by CC-BY-SA / CC-BY. We always render the author with
+a link back to the Commons file page.
 
 Usage:
   python fetch_photos.py                # fill missing / empty entries
@@ -23,8 +24,8 @@ Usage:
   python fetch_photos.py --walk "Pen y Fan Circular (Motorway Route)"
   python fetch_photos.py --verbose      # log every step
 
-If Geograph or postcodes.io is unreachable, the script logs a warning and
-keeps any previous cached entries. build_gui.py will render an empty gallery
+If Commons or postcodes.io is unreachable, the script logs a warning and
+keeps any previous cached entries. build_gui.py renders an empty gallery
 for walks with no cached photos, so the failure mode is "no photos" — never
 "wrong photos".
 """
@@ -37,7 +38,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -46,27 +46,51 @@ HERE = Path(__file__).parent
 XLSX = HERE / "South_Wales_Walks_Database.xlsx"
 CACHE = HERE / "photos_cache.json"
 
-USER_AGENT = "south-wales-walks/2.0 (+https://github.com/Edition74/south-wales-walks)"
-GEOGRAPH_URL = "https://www.geograph.org.uk/syndicator.php"
-POSTCODES_IO  = "https://api.postcodes.io/postcodes/"
-# Geograph asks for <=2 req/sec. postcodes.io has no such cap but we throttle
-# a bit anyway to be polite.
-DELAY_SECS = 0.6
+# Wikimedia requires a descriptive User-Agent on anon API requests.
+USER_AGENT = (
+    "south-wales-walks/3.0 "
+    "(+https://github.com/Edition74/south-wales-walks; edition74@outlook.com)"
+)
+COMMONS_API = "https://commons.wikimedia.org/w/api.php"
+POSTCODES_IO = "https://api.postcodes.io/postcodes/"
+# Short delay between postcodes.io + Commons calls. Both have no strict
+# public limit but we stay polite.
+DELAY_SECS = 0.3
 REQ_TIMEOUT = 15
-# How wide a radius (km) to search around each walk's start for photos.
-# Geograph's `d` parameter defaults to 25km which over-collects; 10km keeps
-# results tightly on-route for most walks.
-RADIUS_KM = 10
+# Search radius in metres around each walk's start. 10 km covers the walk
+# itself plus a generous ring of surrounding viewpoints.
+RADIUS_M = 10_000
+# How many candidate files to pull from Commons before filtering. We throw
+# away maps/logos/diagrams, so ask for plenty of headroom before keeping 3.
+CANDIDATES = 30
+# Thumbnail width in pixels — Commons will scale server-side.
+THUMB_WIDTH = 1024
 
-NS = {
-    "dc":   "http://purl.org/dc/elements/1.1/",
-    "geo":  "http://www.w3.org/2003/01/geo/wgs84_pos#",
-    "media": "http://search.yahoo.com/mrss/",
-}
+# File-title substrings that almost certainly aren't scenic photos of the
+# area. Checked case-insensitively on the raw "File:…" title.
+EXCLUDE_TITLE_PARTS = (
+    "coat of arms",
+    "coat_of_arms",
+    "flag of",
+    "flag_of",
+    "logo",
+    "map of",
+    "map_of",
+    "location map",
+    "location_map",
+    "diagram",
+    "schematic",
+    "plan of",
+    "plan_of",
+    "road sign",
+    "wikidata",
+)
 
 
 def _http_get(url: str, verbose: bool = False) -> bytes | None:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"})
+    req = urllib.request.Request(
+        url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
+    )
     try:
         with urllib.request.urlopen(req, timeout=REQ_TIMEOUT) as r:
             return r.read()
@@ -97,56 +121,119 @@ def postcode_to_lat_lon(postcode: str, verbose: bool = False) -> tuple[float, fl
     return (float(lat), float(lon))
 
 
-def fetch_geograph_near(lat: float, lon: float, verbose: bool = False) -> list[dict]:
-    """Return up to 10 photo records near (lat, lon). Empty list on failure."""
-    q = urllib.parse.urlencode({
-        "ll":     f"{lat},{lon}",
-        "d":      RADIUS_KM,
-        "output": "rss",
-    })
-    url = f"{GEOGRAPH_URL}?{q}"
+def commons_geosearch(lat: float, lon: float, verbose: bool = False) -> list[str]:
+    """Return a list of 'File:Foo.jpg' titles near (lat, lon). Empty on failure."""
+    params = {
+        "action":        "query",
+        "list":          "geosearch",
+        "gscoord":       f"{lat}|{lon}",
+        "gsradius":      RADIUS_M,
+        "gslimit":       CANDIDATES,
+        "gsnamespace":   6,       # File: namespace
+        "format":        "json",
+        "formatversion": 2,
+    }
+    url = f"{COMMONS_API}?{urllib.parse.urlencode(params)}"
     if verbose:
-        print(f"    geograph: {url}")
+        print(f"    commons geosearch: {url}")
     body = _http_get(url, verbose=verbose)
     if not body:
         return []
     try:
-        root = ET.fromstring(body)
-    except ET.ParseError as e:
-        if verbose:
-            print(f"    ! xml parse error: {e}", file=sys.stderr)
+        obj = json.loads(body)
+    except json.JSONDecodeError:
         return []
-    out: list[dict] = []
-    for item in root.iter("item"):
-        title = (item.findtext("title") or "").strip()
-        link  = (item.findtext("link")  or "").strip()
-        desc  = (item.findtext("description") or "")
-        creator = (item.findtext("dc:creator", default="", namespaces=NS) or "").strip()
-        plat  = item.findtext("geo:lat",  default=None, namespaces=NS)
-        plon  = item.findtext("geo:long", default=None, namespaces=NS)
-
-        # The RSS description embeds an <img src="..."> thumbnail. Full-size
-        # photos live at the same host with /photos/ instead of /photos_m/.
-        img_match = re.search(r'<img[^>]+src="([^"]+)"', desc, re.I)
-        thumb = img_match.group(1) if img_match else None
-        medium = None
-        if thumb:
-            medium = re.sub(r"/photos_m/", "/photos/", thumb)
-            medium = re.sub(r"/photos_ms/", "/photos/", medium)
-
-        if not (title and link and thumb):
+    results = obj.get("query", {}).get("geosearch", []) or []
+    titles: list[str] = []
+    for r in results:
+        title = r.get("title") or ""
+        if not title.startswith("File:"):
             continue
+        low = title.lower()
+        if any(part in low for part in EXCLUDE_TITLE_PARTS):
+            continue
+        titles.append(title)
+    return titles
+
+
+_TAG_RX = re.compile(r"<[^>]+>")
+
+
+def _clean(s: str) -> str:
+    return _TAG_RX.sub("", s or "").strip()
+
+
+def commons_imageinfo(titles: list[str], verbose: bool = False) -> list[dict]:
+    """Fetch image URLs + attribution for a batch of Commons file titles."""
+    if not titles:
+        return []
+    params = {
+        "action":              "query",
+        "prop":                "imageinfo",
+        "iiprop":              "url|extmetadata|mime|size",
+        "iiurlwidth":          THUMB_WIDTH,
+        "iiextmetadatafilter": "ImageDescription|Artist|LicenseShortName|LicenseUrl|Credit",
+        "titles":              "|".join(titles),
+        "format":              "json",
+        "formatversion":       2,
+    }
+    url = f"{COMMONS_API}?{urllib.parse.urlencode(params)}"
+    if verbose:
+        print(f"    commons imageinfo: {len(titles)} title(s)")
+    body = _http_get(url, verbose=verbose)
+    if not body:
+        return []
+    try:
+        obj = json.loads(body)
+    except json.JSONDecodeError:
+        return []
+
+    # Preserve the geosearch ordering (distance-ranked) rather than Commons'
+    # alphabetical page order.
+    pages_by_title = {p.get("title"): p for p in obj.get("query", {}).get("pages", []) or []}
+    out: list[dict] = []
+    for t in titles:
+        page = pages_by_title.get(t)
+        if not page:
+            continue
+        ii = (page.get("imageinfo") or [None])[0]
+        if not ii:
+            continue
+        mime = ii.get("mime", "")
+        # JPEGs are overwhelmingly landscape photos on Commons. PNGs are
+        # often screenshots/logos/maps; SVGs are diagrams; TIFFs are
+        # digitised documents. Stick to JPEG for predictable results.
+        if mime != "image/jpeg":
+            continue
+
+        meta = ii.get("extmetadata") or {}
+
+        def mv(key: str) -> str:
+            return (meta.get(key) or {}).get("value", "") or ""
+
+        author = _clean(mv("Artist")) or "Wikimedia Commons contributor"
+        credit = _clean(mv("Credit"))
+        lic = _clean(mv("LicenseShortName")) or "See Commons"
+        lic_url = _clean(mv("LicenseUrl"))
+        desc = _clean(mv("ImageDescription"))
+        # Fall back to the filename (without extension/namespace) when no
+        # description exists.
+        pretty_title = (
+            desc[:140]
+            if desc
+            else t.removeprefix("File:").rsplit(".", 1)[0].replace("_", " ")
+        )
+
         out.append({
-            "title": title,
-            "page_url": link,
-            "thumb": thumb,
-            "url": medium or thumb,
-            "photographer": creator or "Geograph contributor",
-            "lat": float(plat) if plat else None,
-            "lon": float(plon) if plon else None,
-            "license": "CC BY-SA 2.0",
-            "license_url": "https://creativecommons.org/licenses/by-sa/2.0/",
-            "source": "Geograph Britain and Ireland",
+            "title":        pretty_title,
+            "page_url":     ii.get("descriptionurl", ""),
+            "thumb":        ii.get("thumburl") or ii.get("url"),
+            "url":          ii.get("url"),
+            "photographer": author,
+            "credit":       credit,
+            "license":      lic,
+            "license_url":  lic_url,
+            "source":       "Wikimedia Commons",
         })
     return out
 
@@ -160,15 +247,15 @@ def read_walks() -> list[dict]:
         rec = {h: ws.cell(r, c).value for h, c in headers.items()}
         if rec.get("ID") and rec.get("Start Postcode"):
             walks.append({
-                "id": rec["ID"],
-                "name": rec["Walk Name"],
+                "id":       rec["ID"],
+                "name":     rec["Walk Name"],
                 "postcode": rec["Start Postcode"],
             })
     return walks
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Fetch Geograph photos for every walk.")
+    ap = argparse.ArgumentParser(description="Fetch Wikimedia Commons photos for every walk.")
     ap.add_argument("--refresh", action="store_true", help="Re-fetch all walks, even cached ones.")
     ap.add_argument("--walk", help="Only fetch a single walk by name.")
     ap.add_argument("--limit", type=int, default=3, help="Photos to keep per walk (default 3).")
@@ -179,12 +266,13 @@ def main() -> None:
     if CACHE.exists():
         cache: dict = json.loads(CACHE.read_text(encoding="utf-8"))
     else:
-        cache = {"version": 2, "walks": {}}
-    # Bump the cache version. v1 used the bad `q=postcode` query so every
-    # entry is stale by construction; force a rebuild on first v2 run.
-    if cache.get("version") != 2:
-        print("cache version < 2 — clearing (old entries used broken query)")
-        cache = {"version": 2, "walks": {}}
+        cache = {"version": 3, "walks": {}}
+    # v1 used the broken Geograph `q=postcode` query; v2 used Geograph's
+    # `ll=` which silently returns empty. v3 moves to Wikimedia Commons.
+    # Either older version is force-cleared on first v3 run.
+    if cache.get("version") != 3:
+        print(f"cache version {cache.get('version')!r} < 3 — clearing (old source returned empties)")
+        cache = {"version": 3, "walks": {}}
     cache.setdefault("walks", {})
 
     walks = read_walks()
@@ -202,6 +290,7 @@ def main() -> None:
             skipped += 1
             continue
         print(f"- [{wid}] {w['name']}  ({w['postcode']})")
+
         coords = postcode_to_lat_lon(w["postcode"], verbose=args.verbose)
         if not coords:
             print(f"    ! postcodes.io couldn't resolve {w['postcode']}")
@@ -213,26 +302,40 @@ def main() -> None:
             time.sleep(DELAY_SECS)
             continue
         lat, lon = coords
-        photos = fetch_geograph_near(lat, lon, verbose=args.verbose)
-        if not photos:
-            print(f"    ! geograph returned 0 photos within {RADIUS_KM}km of {lat:.4f},{lon:.4f}")
+
+        titles = commons_geosearch(lat, lon, verbose=args.verbose)
+        if not titles:
+            print(f"    ! commons returned 0 files within {RADIUS_M//1000}km of {lat:.4f},{lon:.4f}")
             failed += 1
             cache["walks"].setdefault(wid, {}).update({
                 "last_attempt": int(time.time()),
-                "last_status":  "empty",
+                "last_status":  "empty-search",
             })
             time.sleep(DELAY_SECS)
             continue
+
+        photos = commons_imageinfo(titles, verbose=args.verbose)
+        if not photos:
+            print(f"    ! all {len(titles)} candidates filtered out (non-photos)")
+            failed += 1
+            cache["walks"].setdefault(wid, {}).update({
+                "last_attempt": int(time.time()),
+                "last_status":  "empty-filter",
+            })
+            time.sleep(DELAY_SECS)
+            continue
+
+        keep = photos[: args.limit]
         cache["walks"][wid] = {
             "name":         w["name"],
             "postcode":     w["postcode"],
             "lat":          lat,
             "lon":          lon,
-            "photos":       photos[: args.limit],
+            "photos":       keep,
             "last_attempt": int(time.time()),
             "last_status":  "ok",
         }
-        print(f"    ok — {len(photos[:args.limit])} photo(s), first: {photos[0]['title']!r}")
+        print(f"    ok — kept {len(keep)} of {len(photos)} photos, first: {keep[0]['title']!r}")
         fetched += 1
         time.sleep(DELAY_SECS)
 

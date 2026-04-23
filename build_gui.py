@@ -274,36 +274,39 @@ def pick_images(tags, region, walk_id):
     return [u(pid, w=800, q=70) for pid in picked[:3]]
 
 
-# Populate each walk's gallery from the Geograph cache. Walks without cached
+# Populate each walk's gallery from the photo cache. Walks without cached
 # photos get an EMPTY gallery rather than a random Unsplash fallback — stock
 # photos keyed on tags produced jarring mismatches ("Abbey / Church" → clown
 # masks, pyramids, honeycomb, etc.) because Unsplash occasionally recycles
 # photo IDs. "No photos" is a far better failure mode than "wrong photos".
 #
 # To populate galleries, run the GitHub Actions workflow — fetch_photos.py
-# pulls real CC-BY-SA 2.0 photos from Geograph geographically near each walk.
-geo_used = 0
+# pulls geo-searched photos from Wikimedia Commons (free, CC-BY-SA / CC-BY)
+# using each walk's postcode.
+photo_used = 0
 for rec in data:
     cached = _photo_cache.get(str(rec.get("id")), {}).get("photos") or []
     if cached:
-        rec["images"] = [p["url"] for p in cached[:3]]
+        # Prefer the server-scaled `thumb` over the full-size `url` —
+        # Commons originals can be 20MB+ JPEGs that would crush page load.
+        rec["images"] = [p.get("thumb") or p["url"] for p in cached[:3]]
         rec["photo_credits"] = [
             {
                 "photographer": p.get("photographer", ""),
                 "page_url":     p.get("page_url", ""),
                 "title":        p.get("title", ""),
-                "license":      p.get("license", "CC BY-SA 2.0"),
-                "license_url":  p.get("license_url", "https://creativecommons.org/licenses/by-sa/2.0/"),
-                "source":       p.get("source", "Geograph Britain and Ireland"),
+                "license":      p.get("license", "CC BY-SA"),
+                "license_url":  p.get("license_url", "https://creativecommons.org/licenses/by-sa/4.0/"),
+                "source":       p.get("source", "Wikimedia Commons"),
             }
             for p in cached[:3]
         ]
-        geo_used += 1
+        photo_used += 1
     else:
         # Intentionally empty — no stock-photo fallback.
         rec["images"] = []
         rec["photo_credits"] = []
-print(f"  using Geograph photos: {geo_used}/{len(data)}; no photos: {len(data) - geo_used}")
+print(f"  using cached photos: {photo_used}/{len(data)}; no photos: {len(data) - photo_used}")
 
 
 # ---------------------------------------------------------------------------
