@@ -68,11 +68,16 @@ jobs:
         run: python build_gui.py
 
       - name: Stage site files
+        # Copies the entrypoint + the per-walk static pages built by
+        # build_gui.py. We only ship the *.html files from walks/ — the
+        # walks/*.json source files are repo-internal (build inputs) and
+        # don't need to be on the public site.
         run: |
-          mkdir -p _site
+          mkdir -p _site/walks
           cp index.html _site/index.html
           cp ratings.js _site/ratings.js
           cp South_Wales_Walks_Database.xlsx _site/South_Wales_Walks_Database.xlsx
+          cp walks/*.html _site/walks/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
