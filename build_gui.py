@@ -158,6 +158,24 @@ def short(row):
     }
 
 data = [short(w) for w in walks]
+
+# ---------------------------------------------------------------------------
+# Slugs for per-walk URLs (e.g. /walks/pen-y-fan-circular.html). Slugs are
+# kebab-case from the walk name, deduplicated by appending -2 / -3 / ... when
+# two walks share the same slug. We also use the slug as the filename, so it
+# must be filesystem-safe.
+# ---------------------------------------------------------------------------
+def make_slug(name: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", str(name or "").lower()).strip("-")
+    return s or "walk"
+
+_slug_seen = {}
+for rec in data:
+    base = make_slug(rec["name"])
+    n = _slug_seen.get(base, 0) + 1
+    _slug_seen[base] = n
+    rec["slug"] = base if n == 1 else f"{base}-{n}"
+
 print(f"Prepared {len(data)} walks")
 
 # ---------------------------------------------------------------------------
@@ -627,7 +645,7 @@ def featured_card(w):
     accent = REGION_META.get(w["region"], {}).get("accent", "#4a6b3e")
     short_reg = REGION_META.get(w["region"], {}).get("short", w["region"])
     return f'''
-    <button class="feat" type="button" data-walk-name="{esc(w["name"])}" style="--img:url('{w["image"]}');--accent:{accent}" aria-label="Open walk: {esc(w["name"])}">
+    <button class="feat" type="button" data-walk-slug="{esc(w["slug"])}" style="--img:url('{w["image"]}');--accent:{accent}" aria-label="Open walk: {esc(w["name"])}">
       <span class="region-chip">{esc(w["kicker"])} &middot; {esc(short_reg)}</span>
       <h3>{esc(w["name"])}</h3>
       <div class="f-stats">
@@ -1029,6 +1047,8 @@ details[open].filters>summary::after{transform:rotate(180deg)}
 .card-body{padding:1.15rem 1.25rem 1.25rem;display:flex;flex-direction:column;gap:.65rem;flex:1}
 .card-top{display:flex;gap:.5rem;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
 .card h3{margin:0;font-family:"Fraunces",serif;font-weight:500;font-size:1.15rem;line-height:1.2;max-width:19ch;font-variation-settings:"opsz" 72}
+.card-title-link{color:inherit;text-decoration:none;border-bottom:1px solid transparent;transition:border-color .15s,color .15s}
+.card-title-link:hover{color:var(--bracken);border-bottom-color:color-mix(in srgb,var(--bracken) 50%,transparent)}
 .diff-pill{
   display:inline-flex;align-items:center;padding:.24rem .7rem;
   border-radius:999px;font-size:.68rem;font-weight:700;letter-spacing:.1em;
@@ -1068,12 +1088,54 @@ details[open].filters>summary::after{transform:rotate(180deg)}
 .btn-secondary{background:transparent;color:var(--ink);border-color:var(--border)}
 .btn-secondary:hover{border-color:var(--bracken);color:var(--bracken)}
 
-details.more{font-size:.85rem;margin-top:.2rem;flex-basis:100%}
-details.more summary{display:none}
-details.more dl{display:grid;grid-template-columns:auto 1fr;gap:.4rem .9rem;margin:.9rem 0 0;
+/* Walk detail list (used on per-walk pages and any future inline panels). */
+.walk-detail-list{display:grid;grid-template-columns:auto 1fr;gap:.55rem 1.1rem;margin:0;
   padding-top:.9rem;border-top:1px dashed var(--border)}
-details.more dt{font-weight:700;color:var(--muted);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase}
-details.more dd{margin:0;color:var(--ink-soft);font-size:.84rem;line-height:1.5}
+.walk-detail-list dt{font-weight:700;color:var(--muted);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;align-self:start;padding-top:.18rem}
+.walk-detail-list dd{margin:0;color:var(--ink-soft);font-size:.92rem;line-height:1.6}
+
+/* ─── Per-walk page layout ─────────────────────────────────── */
+.walk-back-bar{background:var(--paper);border-bottom:1px solid var(--border)}
+.walk-back-bar .container{display:flex;align-items:center;justify-content:space-between;
+  padding-top:.7rem;padding-bottom:.7rem;gap:1rem;flex-wrap:wrap}
+.walk-back{display:inline-flex;align-items:center;gap:.4rem;color:var(--ink-soft);
+  font-weight:500;font-size:.88rem;padding:.4rem .7rem .4rem .4rem;border-radius:8px;
+  transition:background .15s,color .15s}
+.walk-back:hover{background:var(--bg);color:var(--bracken)}
+.walk-back .arrow{display:inline-block;transition:transform .2s}
+.walk-back:hover .arrow{transform:translateX(-3px)}
+.walk-breadcrumb{font-size:.78rem;color:var(--muted);letter-spacing:.04em}
+.walk-breadcrumb a{color:var(--muted);border-bottom:1px solid transparent;transition:color .15s,border-color .15s}
+.walk-breadcrumb a:hover{color:var(--bracken);border-bottom-color:var(--bracken)}
+
+.walk-page{padding:2.5rem 0 4rem}
+.walk-page .container{max-width:880px}
+.walk-hero{margin-bottom:1.6rem}
+.walk-hero .region-row{font-size:.78rem;color:var(--muted);letter-spacing:.18em;text-transform:uppercase;font-weight:700;margin-bottom:.7rem}
+.walk-hero .region-row .dot{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--accent,var(--moss-2));margin-right:.4rem;vertical-align:middle}
+.walk-hero h1{font-family:"Fraunces",serif;font-weight:500;font-size:clamp(1.7rem,4vw,2.6rem);line-height:1.1;font-variation-settings:"opsz" 72;color:var(--ink);margin:0 0 .8rem}
+.walk-hero .walk-sub{font-size:.95rem;color:var(--muted);margin:0 0 1rem}
+.walk-hero .walk-pill-row{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.2rem}
+.walk-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin:0 0 1.8rem;
+  padding:1rem 1.1rem;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-sm)}
+@media(max-width:560px){.walk-stats{grid-template-columns:repeat(2,1fr)}}
+.walk-stats .si{display:flex;flex-direction:column;align-items:flex-start;gap:.1rem}
+.walk-stats .si-val{font-family:"Fraunces",serif;font-weight:500;font-size:1.4rem;color:var(--ink);line-height:1}
+.walk-stats .si-lbl{font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.walk-features{font-size:1rem;line-height:1.65;color:var(--ink-soft);margin:0 0 1.5rem;font-style:italic;font-family:"Fraunces",serif;font-weight:400}
+.walk-tags{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1.6rem}
+.walk-cta-row{display:flex;flex-wrap:wrap;gap:.6rem;margin:0 0 2rem}
+.walk-cta-row .btn{padding:.7rem 1.2rem;font-size:.92rem}
+
+.walk-section{background:var(--card);border:1px solid var(--border);border-radius:14px;
+  box-shadow:var(--shadow-sm);padding:1.4rem 1.6rem;margin:0 0 1.4rem}
+.walk-section h2{font-family:"Fraunces",serif;font-weight:500;font-size:1.25rem;color:var(--ink);margin:0 0 .9rem;font-variation-settings:"opsz" 72}
+.walk-section h2 .badge{display:inline-block;margin-left:.5rem;padding:.15rem .55rem;border-radius:999px;
+  background:var(--bg);color:var(--muted);font-family:"Inter",sans-serif;font-size:.6rem;letter-spacing:.16em;text-transform:uppercase;font-weight:700;vertical-align:middle}
+.walk-section.is-coming-soon{background:var(--paper);border-style:dashed}
+.walk-section.is-coming-soon p{color:var(--muted);font-size:.92rem;line-height:1.55;margin:0}
+.walk-section .walk-map{margin:.6rem 0}
+.walk-section .walk-gallery{margin:.4rem 0 1rem}
 
 .empty{padding:3rem 1rem;text-align:center;background:var(--card);
   border-radius:14px;border:1px dashed var(--border);color:var(--muted);
@@ -1407,10 +1469,78 @@ const REGION_SHORT  = __REGION_SHORT_JSON__;
 const $ = q => document.querySelector(q);
 const $$ = q => document.querySelectorAll(q);
 
-function toggleDetails(btn){
-  const d = btn.nextElementSibling;
-  if (d && d.tagName === "DETAILS") d.open = !d.open;
+// Filter / search / scroll state is preserved via sessionStorage when the
+// user clicks through to a walk page, so coming back via the browser's
+// Back button feels like reopening an inline panel — same chips on, same
+// scroll position. Cleared when the user explicitly hits Reset.
+const LISTING_STATE_KEY = "swwListingState";
+
+function captureListingState(){
+  try {
+    const state = {
+      search: $("#search").value,
+      regionShorts: [...$$('.chip.on[data-chip-kind="region-short"]')].map(c => c.dataset.v),
+      difficulties: [...$$('.chip.on[data-chip-kind="difficulty"]')].map(c => c.dataset.v),
+      pois: [...$$('#poi-list input:checked')].map(c => c.dataset.tag),
+      flags: ["dogs-yes","offlead","pushchair","family"]
+        .filter(id => $("#"+id).checked),
+      driveMax: $("#drive-max").value,
+      distMax:  $("#dist-max").value,
+      elevMax:  $("#elev-max").value,
+      sort:     $("#sort").value,
+      scrollY:  window.scrollY,
+    };
+    sessionStorage.setItem(LISTING_STATE_KEY, JSON.stringify(state));
+  } catch (e) { /* sessionStorage may be unavailable in private mode */ }
 }
+
+function restoreListingState(){
+  let state;
+  try {
+    const raw = sessionStorage.getItem(LISTING_STATE_KEY);
+    if (!raw) return false;
+    state = JSON.parse(raw);
+  } catch (e) { return false; }
+  if (!state) return false;
+  // Apply each restored bit — chips first, then range inputs (which fire
+  // input events that call apply()), then sort, then a final apply().
+  if (state.search != null) $("#search").value = state.search;
+  $$('.chip[data-chip-kind="region-short"]').forEach(c =>
+    c.classList.toggle("on", (state.regionShorts || []).includes(c.dataset.v))
+  );
+  $$('.chip[data-chip-kind="difficulty"]').forEach(c =>
+    c.classList.toggle("on", (state.difficulties || []).includes(c.dataset.v))
+  );
+  $$('#poi-list input').forEach(c =>
+    c.checked = (state.pois || []).includes(c.dataset.tag)
+  );
+  ["dogs-yes","offlead","pushchair","family"].forEach(id =>
+    $("#"+id).checked = (state.flags || []).includes(id)
+  );
+  if (state.driveMax) $("#drive-max").value = state.driveMax;
+  if (state.distMax)  $("#dist-max").value  = state.distMax;
+  if (state.elevMax)  $("#elev-max").value  = state.elevMax;
+  if (state.sort)     $("#sort").value      = state.sort;
+  // Mirror map zones from chips (since chip restore above didn't trigger sync)
+  if (typeof syncMapFromChips === "function") syncMapFromChips();
+  // Re-render the slider value labels manually since we set values directly
+  ["drive-max","dist-max","elev-max"].forEach(id => {
+    const el = $("#"+id);
+    el.dispatchEvent(new Event("input"));
+  });
+  // Restore scroll AFTER the results have rendered. apply() is sync, so a
+  // microtask is enough to let DOM update before scrolling.
+  requestAnimationFrame(() => {
+    if (state.scrollY) window.scrollTo({top: state.scrollY, behavior: "instant"});
+  });
+  return true;
+}
+
+// Save state when user clicks any walk link (View walk button or title)
+document.addEventListener("click", (e) => {
+  const link = e.target.closest("a[data-walk-link]");
+  if (link) captureListingState();
+});
 
 function mapsUrl(w){
   const q = [w.postcode, w.name, "UK"].filter(Boolean).join(", ");
@@ -1526,23 +1656,14 @@ $$('.chip[data-chip-kind="region-short"]').forEach(c =>
   c.addEventListener("click", () => setTimeout(syncMapFromChips, 0))
 );
 
-// Featured cards → search by walk name, scroll to finder, auto-open details
+// Featured cards → navigate directly to the walk's own page. We capture
+// the listing's filter+scroll state first so the browser Back button
+// returns the user to where they were.
 $$('.feat').forEach(card => card.addEventListener('click', () => {
-  const name = card.dataset.walkName;
-  if (!name) return;
-  reset();
-  $("#search").value = name;
-  apply();
-  document.getElementById("finder").scrollIntoView({behavior:"smooth"});
-  setTimeout(() => {
-    const target = [...document.querySelectorAll('#results .card')]
-      .find(c => c.querySelector('h3')?.textContent === name);
-    if (target){
-      const det = target.querySelector('details.more');
-      if (det) det.open = true;
-      target.scrollIntoView({behavior:"smooth", block:"center"});
-    }
-  }, 400);
+  const slug = card.dataset.walkSlug;
+  if (!slug) return;
+  captureListingState();
+  window.location.href = "walks/" + encodeURIComponent(slug) + ".html";
 }));
 
 function reset(){
@@ -1556,6 +1677,9 @@ function reset(){
   $("#elev-max").value = $("#elev-max").max;
   ["drive-val","dist-val","elev-val"].forEach(i => $("#"+i).textContent = "Any");
   $("#sort").value = "drive";
+  // Drop any saved filter/scroll state so coming back to the home page
+  // after a reset really does start clean.
+  try { sessionStorage.removeItem(LISTING_STATE_KEY); } catch(e){}
   apply();
 }
 
@@ -1627,33 +1751,14 @@ function walkCard(w){
   const tagsHtml = (w.tags || []).slice(0,5).map(t => `<span class="tag">${esc(t)}</span>`).join("");
   const accent = accentFor(w.region);
   const short  = shortFor(w.region);
-  const imgs = (w.images || []).slice(0,3);
-  const credits = (w.photo_credits || []).slice(0,3);
-  const galleryHtml = imgs.length
-    ? `<div class="walk-gallery">${imgs.map((src,i) =>
-        `<img loading="lazy" src="${esc(src)}" alt="${esc(w.name)} — scenery ${i+1}" onerror="this.style.visibility='hidden'">`
-      ).join("")}</div>`
-    : "";
-  const creditHtml = credits.length
-    ? `<div class="walk-credits">Photos: ${credits.map(c =>
-        `<a href="${esc(c.page_url)}" target="_blank" rel="noopener noreferrer">${esc(c.title || 'photo')}</a> &copy; <strong>${esc(c.photographer)}</strong>`
-      ).join(" · ")} &middot; <a href="${esc(credits[0].license_url)}" target="_blank" rel="noopener noreferrer">${esc(credits[0].license)}</a>, via ${esc(credits[0].source)}.</div>`
-    : "";
-  const mapQ = encodeURIComponent([w.postcode, w.name, "UK"].filter(Boolean).join(", "));
-  const mapEmbed = w.postcode
-    ? `<div class="walk-map"><iframe loading="lazy" src="https://maps.google.com/maps?q=${mapQ}&t=&z=13&ie=UTF8&iwloc=&output=embed" referrerpolicy="no-referrer-when-downgrade" title="Map of ${esc(w.name)}"></iframe></div>
-       <div class="walk-map-links">
-         <a href="https://explore.osmaps.com/search?q=${encodeURIComponent(w.postcode)}" target="_blank" rel="noopener noreferrer">Open in OS Maps ↗</a>
-         <a href="https://www.openstreetmap.org/search?query=${encodeURIComponent(w.postcode)}" target="_blank" rel="noopener noreferrer">Open in OpenStreetMap ↗</a>
-       </div>`
-    : "";
+  const walkUrl = `walks/${encodeURIComponent(w.slug)}.html`;
   return `
     <article class="card" style="--accent:${accent}">
       <div class="card-accent"></div>
       <div class="card-body">
         <div class="region-row"><span class="dot"></span>${esc(short)}${w.sub ? " · " + esc(w.sub) : ""}</div>
         <div class="card-top">
-          <h3>${esc(w.name)}</h3>
+          <h3><a class="card-title-link" href="${walkUrl}" data-walk-link="${esc(w.slug)}">${esc(w.name)}</a></h3>
           <span class="diff-pill ${diffClass}">${esc(w.difficulty)}</span>
         </div>
         <div class="stats-inline">
@@ -1666,31 +1771,7 @@ function walkCard(w){
         <div class="tag-row">${tagsHtml}</div>
         <div class="card-btns">
           <a class="btn btn-primary" href="${mapsUrl(w)}" target="_blank" rel="noopener noreferrer">Directions ↗</a>
-          <button class="btn btn-secondary" type="button" onclick="toggleDetails(this)">More detail</button>
-          <details class="more">
-            <summary>Details</summary>
-            ${galleryHtml}
-            ${creditHtml}
-            ${mapEmbed}
-            <dl>
-              <dt>Start</dt><dd>${esc(w.parking || '—')} (${esc(w.postcode || '—')})</dd>
-              <dt>Terrain</dt><dd>${esc(w.terrain || '—')}</dd>
-              <dt>Route</dt><dd>${esc(w.route || '—')}</dd>
-              <dt>Dogs</dt><dd>${esc(w.dogs)} · ${esc(w.leash || '')}</dd>
-              <dt>Pushchair</dt><dd>${esc(w.pushchair || '—')}</dd>
-              <dt>Waymarked</dt><dd>${esc(w.waymarked || '—')}</dd>
-              <dt>Best season</dt><dd>${esc(w.season || '—')}</dd>
-              <dt>Points of interest</dt><dd>${esc(w.poi || '—')}</dd>
-              <dt>Viewpoints</dt><dd>${esc(w.views || '—')}</dd>
-              <dt>Water features</dt><dd>${esc(w.water || '—')}</dd>
-              <dt>Picnic spots</dt><dd>${esc(w.picnic || '—')}</dd>
-              <dt>Food &amp; drink</dt><dd>${esc(w.food || '—')}</dd>
-              <dt>Toilets</dt><dd>${esc(w.toilets || '—')}</dd>
-              <dt>Public transport</dt><dd>${esc(w.transport || '—')}</dd>
-              <dt>Hazards / notes</dt><dd>${esc(w.notes || '—')}</dd>
-            </dl>
-            <div class="walk-ratings" data-ratings-for="${w.id}"></div>
-          </details>
+          <a class="btn btn-secondary" href="${walkUrl}" data-walk-link="${esc(w.slug)}">View walk →</a>
         </div>
       </div>
     </article>
@@ -1759,7 +1840,19 @@ function render(list){
   if (window.ratings && window.ratings.refreshAll) window.ratings.refreshAll();
 }
 
-apply();
+// Restore filter/search state if the user is coming back from a walk
+// page. restoreListingState() applies the saved chips/inputs and triggers
+// `input` events on the sliders, which call apply() — so we only need to
+// call apply() ourselves on a fresh visit. Wrapped in pageshow so that
+// browser bfcache returns also restore state correctly.
+if (!restoreListingState()) {
+  apply();
+}
+window.addEventListener("pageshow", (e) => {
+  // bfcache restoration — sessionStorage may already have state from a
+  // walk-page click. Re-apply on every show so chips look right.
+  if (e.persisted) restoreListingState();
+});
 
 // Ratings widget — loads after the walk list so every details block has
 // a <div data-ratings-for="{id}"> slot ready.
@@ -1809,4 +1902,326 @@ print(f"  regions: {len(regions)}")
 print(f"  tags: {len(all_tags)} ({', '.join(all_tags)})")
 print(f"  featured walks: {len(featured_walks)}")
 print(f"  region tiles: {len(region_tiles)}")
+
+# ---------------------------------------------------------------------------
+# Per-walk static pages (walks/{slug}.html). One HTML file per walk, sharing
+# the same CSS as the index by extracting the built <style> block. Each page
+# carries: hero (region · sub-area, name, difficulty pill), stats grid,
+# features intro, photo gallery (with credits), embedded map, full walk
+# details list, ratings widget, and four "coming soon" placeholder sections
+# (trail notes, conditions & seasonality, where to stay, reviews) so future
+# content has a home without another structural change.
+# ---------------------------------------------------------------------------
+import urllib.parse  # noqa: E402  (deferred until we know we'll write walks)
+
+# Reuse the index's already-substituted CSS so the walk pages look identical
+# without us having to maintain two style blocks. The HTML at this point has
+# every __INJECT_*__ token replaced, so the captured CSS is final.
+_style_match = re.search(r"<style>([\s\S]*?)</style>", HTML)
+SHARED_CSS = _style_match.group(1) if _style_match else ""
+
+WALKS_DIR = HERE / "walks"
+WALKS_DIR.mkdir(exist_ok=True)
+
+# Wipe stale pages so renamed walks don't leave orphan URLs behind.
+for stale in WALKS_DIR.glob("*.html"):
+    stale.unlink()
+
+# Detail-list ordering. Each tuple is (label, dict-key, optional formatter).
+# Empty/missing values are dropped at render-time so pages stay tidy when
+# the spreadsheet has gaps for a particular walk.
+def _fmt_drive(v):
+    return f"{v} min" if isinstance(v, (int, float)) and v < 999 else None
+def _fmt_distance(w):
+    mi = w.get("miles"); km = w.get("km")
+    if not mi and not km: return None
+    return f"{mi} mi · {km} km" if (mi and km) else f"{mi or km} {'mi' if mi else 'km'}"
+def _fmt_elev(v):
+    return f"{v} m" if v not in (None, "", 0) else None
+def _fmt_time(v):
+    return f"{v} hrs" if v not in (None, "") else None
+
+WALK_DETAIL_FIELDS = [
+    ("Sub-area",            "sub"),
+    ("Nearest town",        "town"),
+    ("Route type",          "route"),
+    ("Terrain",             "terrain"),
+    ("Dogs",                "dogs"),
+    ("Lead policy",         "leash"),
+    ("Pushchair friendly",  "pushchair"),
+    ("Waymarked",           "waymarked"),
+    ("Best season",         "season"),
+    ("Points of interest",  "poi"),
+    ("Viewpoints",          "views"),
+    ("Water features",      "water"),
+    ("Picnic spots",        "picnic"),
+    ("Parking & start",     "parking"),
+    ("Postcode",            "postcode"),
+    ("Food & drink nearby", "food"),
+    ("Toilets",             "toilets"),
+    ("Public transport",    "transport"),
+    ("Hazards / notes",     "notes"),
+]
+
+def _detail_value(walk, key):
+    raw = walk.get(key)
+    if raw is None: return ""
+    s = str(raw).strip()
+    if s in ("", "—", "-", "None", "nan"): return ""
+    return s
+
+def walk_page_html(walk):
+    accent     = REGION_META.get(walk["region"], {}).get("accent", "#4a6b3e")
+    short_reg  = REGION_META.get(walk["region"], {}).get("short", walk["region"])
+    diff_class = "diff-" + (walk.get("difficulty") or "").replace(" ", ".")
+
+    # --- Hero subtitle: "Nearest town · postcode" if we have either ---
+    sub_bits = []
+    if walk.get("town"):     sub_bits.append(f"Nearest town: {esc(walk['town'])}")
+    if walk.get("postcode"): sub_bits.append(f"Postcode: {esc(walk['postcode'])}")
+    sub_block = f'<p class="walk-sub">{" · ".join(sub_bits)}</p>' if sub_bits else ""
+
+    sub_dot = f" · {esc(walk['sub'])}" if walk.get("sub") else ""
+
+    # --- Stats grid ---
+    miles = walk.get("miles") if walk.get("miles") not in (None, "") else "?"
+    elev  = walk.get("elev")  if walk.get("elev")  not in (None, "") else "?"
+    time_ = walk.get("time")  if walk.get("time")  not in (None, "") else "?"
+    drive = walk.get("drive") if isinstance(walk.get("drive"), (int, float)) and walk["drive"] < 999 else "?"
+
+    # --- Features blurb ---
+    features_block = (
+        f'<p class="walk-features">{esc(walk["features"])}</p>'
+        if walk.get("features") else ""
+    )
+
+    # --- Tag pills ---
+    tags = walk.get("tags") or []
+    tags_block = (
+        '<div class="walk-tags">' + "".join(f'<span class="tag">{esc(t)}</span>' for t in tags) + "</div>"
+        if tags else ""
+    )
+
+    # --- Maps (Google for directions, Google embed for the iframe) ---
+    q_parts = [p for p in [walk.get("postcode"), walk.get("name"), "UK"] if p]
+    q_str   = ", ".join(str(p) for p in q_parts)
+    directions_url = "https://www.google.com/maps?q=" + urllib.parse.quote_plus(q_str)
+    embed_url      = "https://maps.google.com/maps?q=" + urllib.parse.quote_plus(q_str) + "&output=embed"
+
+    # --- Photo gallery + credits ---
+    images  = walk.get("images") or []
+    credits = walk.get("photo_credits") or []
+    if images:
+        gallery_imgs = "".join(
+            f'<img src="{esc(src)}" alt="{esc(walk["name"])}" loading="lazy">'
+            for src in images
+        )
+        if credits:
+            credit_lines = []
+            for c in credits:
+                photog = esc(c.get("photographer", ""))
+                title  = esc(c.get("title", ""))
+                page   = esc(c.get("page_url", ""))
+                lic    = esc(c.get("license", "CC BY-SA"))
+                lic_url = esc(c.get("license_url", ""))
+                src    = esc(c.get("source", "Wikimedia Commons"))
+                title_link = f'<a href="{page}" target="_blank" rel="noopener noreferrer">{title or "Source"}</a>' if page else (title or "Source")
+                lic_link   = f'<a href="{lic_url}" target="_blank" rel="noopener noreferrer">{lic}</a>' if lic_url else lic
+                photog_part = f'<strong>{photog}</strong> · ' if photog else ''
+                credit_lines.append(f'{photog_part}{title_link} · {lic_link} · {src}')
+            credits_html = '<div class="walk-credits">' + "<br>".join(credit_lines) + "</div>"
+        else:
+            credits_html = ""
+        photos_section = f'''
+    <section class="walk-section">
+      <h2>Photos</h2>
+      <div class="walk-gallery">{gallery_imgs}</div>
+      {credits_html}
+    </section>'''
+    else:
+        photos_section = ""
+
+    # --- Map section ---
+    map_section = f'''
+    <section class="walk-section">
+      <h2>On the map</h2>
+      <div class="walk-map"><iframe src="{esc(embed_url)}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe></div>
+      <div class="walk-map-links">
+        <a href="{esc(directions_url)}" target="_blank" rel="noopener noreferrer">Open in Google Maps ↗</a>
+      </div>
+    </section>'''
+
+    # --- Walk details (filter empty fields out) ---
+    detail_rows = []
+    # Region & key stats first, always shown
+    detail_rows.append(("Region", esc(short_reg)))
+    distance = _fmt_distance(walk)
+    if distance: detail_rows.append(("Distance", esc(distance)))
+    elev_fmt = _fmt_elev(walk.get("elev"))
+    if elev_fmt: detail_rows.append(("Elevation gain", esc(elev_fmt)))
+    time_fmt = _fmt_time(walk.get("time"))
+    if time_fmt: detail_rows.append(("Estimated time", esc(time_fmt)))
+    if walk.get("difficulty"): detail_rows.append(("Difficulty", esc(walk["difficulty"])))
+    drive_fmt = _fmt_drive(walk.get("drive"))
+    if drive_fmt: detail_rows.append(("Drive from Monmouth", esc(drive_fmt)))
+    # Then all the optional free-text fields
+    for label, key in WALK_DETAIL_FIELDS:
+        v = _detail_value(walk, key)
+        if v:
+            detail_rows.append((label, esc(v)))
+    detail_dl = "".join(f"<dt>{label}</dt><dd>{value}</dd>" for label, value in detail_rows)
+    details_section = f'''
+    <section class="walk-section">
+      <h2>Walk details</h2>
+      <dl class="walk-detail-list">{detail_dl}</dl>
+    </section>'''
+
+    # --- Ratings widget slot (script tags inject Supabase env vars below) ---
+    ratings_section = f'''
+    <section class="walk-section">
+      <h2>Ratings &amp; sign-in</h2>
+      <div class="walk-ratings" data-ratings-for="{esc(walk["id"])}"></div>
+    </section>'''
+
+    # --- Compose the page ---
+    desc_bits = [walk.get("features") or ""]
+    if walk.get("town"): desc_bits.append(f"Near {walk['town']}.")
+    desc_bits.append(f"{walk.get('miles', '?')}mi {short_reg} walk · {walk.get('difficulty', '')}.")
+    description = " ".join(b for b in desc_bits if b).strip()[:160]
+
+    page = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{esc(walk['name'])} · South Wales Walks</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="{esc(description)}">
+<meta name="theme-color" content="#2f4530">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+{SHARED_CSS}
+</style>
+</head>
+<body>
+
+<div class="walk-back-bar">
+  <div class="container">
+    <a class="brand" href="../">{LOGO_SVG}
+      <div>
+        <div class="brand-name"><b>South Wales</b> Walks</div>
+        <span class="brand-sub">Curated · Wild · Walkable</span>
+      </div>
+    </a>
+    <a class="walk-back" href="../#finder"><span class="arrow">←</span> All walks</a>
+  </div>
+</div>
+
+<main class="walk-page">
+  <div class="container">
+
+    <div class="walk-hero" style="--accent:{accent}">
+      <div class="region-row"><span class="dot"></span>{esc(short_reg)}{sub_dot}</div>
+      <h1>{esc(walk['name'])}</h1>
+      {sub_block}
+      <div class="walk-pill-row">
+        <span class="diff-pill {diff_class}">{esc(walk.get('difficulty', ''))}</span>
+      </div>
+    </div>
+
+    <div class="walk-stats">
+      <div class="si"><span class="si-val">{miles}</span><span class="si-lbl">miles</span></div>
+      <div class="si"><span class="si-val">{elev}</span><span class="si-lbl">m ascent</span></div>
+      <div class="si"><span class="si-val">{time_}</span><span class="si-lbl">hours</span></div>
+      <div class="si"><span class="si-val">{drive}</span><span class="si-lbl">min drive</span></div>
+    </div>
+
+    {features_block}
+    {tags_block}
+
+    <div class="walk-cta-row">
+      <a class="btn btn-primary" href="{esc(directions_url)}" target="_blank" rel="noopener noreferrer">Directions ↗</a>
+      <a class="btn btn-secondary" href="../#finder">← Back to all walks</a>
+    </div>
+
+    {photos_section}
+    {map_section}
+    {details_section}
+    {ratings_section}
+
+    <section class="walk-section is-coming-soon">
+      <h2>Trail notes <span class="badge">Coming soon</span></h2>
+      <p>Step-by-step route description, mile-by-mile waypoints and a downloadable GPX track will appear here.</p>
+    </section>
+    <section class="walk-section is-coming-soon">
+      <h2>Conditions &amp; seasonality <span class="badge">Coming soon</span></h2>
+      <p>Real-time tide tables, MoD range-days, livestock alerts and seasonal closures will appear here so you can plan around them.</p>
+    </section>
+    <section class="walk-section is-coming-soon">
+      <h2>Where to stay nearby <span class="badge">Coming soon</span></h2>
+      <p>Curated campsites, B&amp;Bs and pubs with rooms within 30 minutes of the trailhead will appear here.</p>
+    </section>
+    <section class="walk-section is-coming-soon">
+      <h2>Reviews <span class="badge">Coming soon</span></h2>
+      <p>Walker reports, recent photos and trail conditions from people who've walked it will appear here.</p>
+    </section>
+
+  </div>
+</main>
+
+<footer class="site">
+  <div class="container">
+    <div class="foot-grid">
+      <div>
+        <div class="foot-brand">
+          {LOGO_SVG_FOOTER}
+          <div>
+            <div class="foot-brand-text">South Wales Walks</div>
+            <span class="foot-brand-sub">Cerddwr · Walking guide</span>
+          </div>
+        </div>
+        <p class="foot-tagline">A hand-compiled, free, ad-free guide to the best walks of South Wales.</p>
+      </div>
+      <div class="foot-col">
+        <h5>Navigate</h5>
+        <a href="../#top">Home</a>
+        <a href="../#regions">Regions</a>
+        <a href="../#finder">All walks</a>
+      </div>
+      <div class="foot-col">
+        <h5>The small print</h5>
+        <span>Verify tide tables, MoD range days, parking fees and pub opening times before setting out.</span>
+        <a href="../South_Wales_Walks_Database.xlsx">Download spreadsheet ↓</a>
+      </div>
+    </div>
+    <div class="foot-legal">
+      <span>© {datetime.date.today().year} Jason · South Wales Walks</span>
+      <span>Data compiled 2026 · <em style="font-style:italic">Cerddwch yn ofalus</em> — walk safely.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+window.__SUPABASE_URL__      = "{SUPABASE_URL}";
+window.__SUPABASE_ANON_KEY__ = "{SUPABASE_ANON_KEY}";
+</script>
+<script src="../ratings.js"></script>
+<script>
+if (window.ratings) window.ratings.init();
+</script>
+
+</body>
+</html>
+"""
+    return page
+
+written = 0
+for walk in data:
+    page_html = walk_page_html(walk)
+    out_path = WALKS_DIR / f"{walk['slug']}.html"
+    out_path.write_text(page_html, encoding="utf-8")
+    written += 1
+
+print(f"Wrote {written} per-walk pages → {WALKS_DIR}")
 print(f"  near Monmouth (<=60min): {near_count}")
