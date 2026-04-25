@@ -198,13 +198,17 @@ REGION_META = {
         "short": "Wye Valley & Monmouthshire",
         "tagline": "Hanging woods, river meanders and Norman castles on every other hill.",
         "image": u("photo-1441974231531-c6227db76b6e"),
-        "accent": "#4a6b3e",
+        # Wood-brown to differentiate from Brecon Beacons' moss green and
+        # echo the hanging-woods/sandstone character of the lower Wye.
+        "accent": "#6b4a2a",
     },
     "Mid Wales (Powys & Ceredigion)": {
         "short": "Mid Wales",
         "tagline": "Elan Valley dams, the Cambrian wilderness and Cardigan Bay cliffs.",
         "image": u("photo-1469474968028-56623f02e42e"),
-        "accent": "#2d4a5e",
+        # Olive moss, to slot between Brecon Beacons and the warmer south
+        # accents instead of the previous off-theme cool navy.
+        "accent": "#5d6b3a",
     },
     "Carmarthenshire & West Wales": {
         "short": "Carmarthenshire",
@@ -219,6 +223,244 @@ REGION_META = {
         "accent": "#3f3a25",
     },
 }
+
+# ---------------------------------------------------------------------------
+# Interactive Wales map: hand-drawn region silhouettes. The goal is instant
+# regional identity ("that's the Gower peninsula") rather than cartographic
+# precision. Each region is a clickable zone that toggles the matching
+# filter chip below. North Wales is rendered greyed-out as "coming soon",
+# and the English Borders zone extends east of the main Wales outline with
+# a dashed border to signal that it's over-the-line.
+# ---------------------------------------------------------------------------
+WALES_MAP_VIEWBOX = "0 0 820 780"
+
+# Real Wales boundary, derived from ONS Census 2021 country boundary
+# (wales_ctry_2022.kml). Simplified via Ramer–Douglas–Peucker (epsilon=1.2)
+# and projected to the 820x780 viewBox using equirectangular projection
+# (lon -5.45..-2.55, lat 51.30..53.48). See parse_wales_kml.py.
+WALES_MAINLAND_PATH = (
+    "M 213.9,647.4 L 208.9,654.2 L 196.6,653.7 L 195.1,655.4 L 196.3,656.9 L 191.2,657.4 L 189.2,660.2 L 175.1,655.9 L 167.1,656.3 L 166.2,659.1 L 156.7,662.5 L 154.7,666.5 L 156.6,669.1 L 151.7,668.9 L 148.1,674.1 L 141.8,673.7 L 130.8,668.3 L 125.2,669.7 L 110.4,665.3 L 109.7,662.2 L 112.2,659.8 L 110.3,659.3 L 112.2,658.4 L 107.3,650.0 L 98.2,648.6 L 95.2,646.3 L 92.2,647.2 L 93.9,645.9 L 91.6,643.0 L 95.1,642.3 L 94.9,639.7 L 96.3,639.6 L 104.6,640.5 L 106.5,643.6 L 110.6,644.2 L 112.7,639.1 L 119.4,638.6 L 132.6,640.6 L 131.1,642.6 L 134.2,643.7 L 133.5,638.8 L 137.9,636.4 L 146.4,634.4 L 150.3,636.7 L 153.8,634.0 L 158.0,634.7 L 159.3,630.9 L 163.4,630.6 L 159.8,630.1 L 160.3,624.7 L 156.1,622.7 L 159.5,611.5 L 157.0,612.9 L 151.9,611.3 L 156.9,615.0 L 154.8,622.0 L 159.2,626.0 L 156.8,633.3 L 153.6,632.9 L 149.9,635.1 L 145.1,633.9 L 131.9,637.2 L 117.5,633.0 L 110.0,634.0 L 110.2,636.7 L 112.0,636.4 L 109.2,637.1 L 109.4,634.3 L 102.8,634.6 L 99.6,629.7 L 94.5,633.2 L 91.1,631.1 L 89.2,632.4 L 81.5,631.5 L 79.9,634.3 L 85.0,636.0 L 82.9,636.4 L 82.9,641.2 L 79.5,641.4 L 79.5,643.5 L 77.4,643.9 L 73.8,640.3 L 73.7,633.8 L 70.0,633.2 L 69.8,630.9 L 66.8,629.1 L 60.8,630.6 L 62.4,628.7 L 55.6,625.0 L 55.3,623.2 L 67.3,624.6 L 69.3,622.7 L 69.7,617.0 L 74.4,617.3 L 81.9,610.8 L 94.1,612.1 L 97.5,604.5 L 94.6,588.5 L 87.7,578.3 L 75.8,579.3 L 75.7,577.0 L 67.3,577.2 L 65.7,575.1 L 61.9,574.9 L 57.6,575.1 L 56.1,577.1 L 55.1,575.5 L 47.4,576.0 L 47.9,577.6 L 43.7,580.3 L 43.1,577.8 L 37.8,579.8 L 36.7,578.0 L 40.3,574.3 L 37.8,570.8 L 41.1,569.8 L 42.9,566.8 L 41.2,564.3 L 38.3,564.5 L 45.5,560.2 L 54.0,560.0 L 60.4,554.8 L 67.8,553.5 L 67.0,551.5 L 70.5,550.6 L 69.5,549.1 L 71.7,547.2 L 82.7,548.1 L 86.8,545.3 L 85.2,543.5 L 87.8,542.1 L 92.8,543.6 L 96.8,543.2 L 98.9,540.1 L 102.8,540.8 L 103.9,539.0 L 102.4,536.7 L 104.2,534.6 L 101.4,534.2 L 102.2,533.0 L 100.2,531.8 L 106.6,527.9 L 101.9,524.1 L 106.9,520.1 L 106.1,518.5 L 120.6,520.5 L 121.4,522.2 L 129.6,520.2 L 130.9,523.7 L 135.8,525.0 L 132.2,524.3 L 129.4,527.8 L 132.7,527.7 L 131.1,529.3 L 135.0,530.7 L 135.6,528.9 L 149.7,525.8 L 152.4,522.0 L 150.2,520.2 L 152.5,517.1 L 157.2,518.3 L 157.2,521.0 L 159.6,522.1 L 169.6,521.6 L 172.7,518.1 L 170.3,515.3 L 173.0,511.6 L 186.1,508.5 L 193.1,501.8 L 195.3,501.7 L 197.2,496.3 L 200.1,494.3 L 198.1,492.2 L 203.2,487.3 L 209.2,490.8 L 214.4,489.3 L 214.9,491.1 L 215.9,483.0 L 227.4,481.7 L 228.2,480.1 L 245.2,480.2 L 249.6,477.8 L 255.4,481.1 L 263.1,480.9 L 276.3,472.0 L 278.2,467.3 L 278.5,469.0 L 281.4,469.5 L 288.7,465.8 L 303.2,452.3 L 307.0,451.0 L 310.8,454.1 L 315.4,451.8 L 318.1,452.8 L 335.9,441.0 L 343.6,439.3 L 351.1,435.0 L 357.6,424.9 L 361.4,423.8 L 370.1,414.1 L 374.7,406.5 L 377.8,395.8 L 384.5,387.0 L 383.4,381.5 L 385.7,380.3 L 387.2,374.9 L 386.6,368.0 L 388.4,367.3 L 391.9,359.1 L 394.8,357.3 L 392.1,339.8 L 396.0,336.9 L 389.0,336.0 L 380.2,318.9 L 373.1,311.5 L 380.8,292.4 L 393.2,283.3 L 392.2,276.2 L 393.9,274.5 L 391.5,273.8 L 392.3,272.2 L 386.3,262.6 L 366.9,241.7 L 366.4,238.0 L 373.4,233.9 L 375.6,225.9 L 372.3,219.7 L 359.7,205.5 L 345.7,200.9 L 336.3,204.5 L 322.3,204.4 L 318.7,206.3 L 317.7,210.4 L 300.8,209.2 L 297.6,210.5 L 297.6,214.1 L 280.2,218.3 L 275.8,223.5 L 277.1,226.2 L 269.6,231.6 L 268.7,236.6 L 273.4,241.5 L 272.5,245.2 L 271.0,246.6 L 264.3,246.2 L 263.3,249.9 L 260.7,251.3 L 256.6,248.2 L 258.0,243.3 L 248.3,237.2 L 239.4,234.9 L 236.8,235.2 L 233.5,240.0 L 227.9,243.5 L 221.8,241.5 L 215.5,245.7 L 212.4,243.0 L 207.0,242.4 L 202.9,249.8 L 195.8,247.6 L 192.9,244.1 L 197.4,241.4 L 197.5,237.7 L 205.3,230.2 L 204.6,224.2 L 213.0,222.0 L 214.8,216.7 L 220.9,214.7 L 220.9,211.9 L 226.1,205.4 L 230.9,205.3 L 236.0,198.9 L 242.8,197.3 L 248.5,193.5 L 249.5,190.2 L 251.8,193.8 L 262.8,192.9 L 273.7,183.8 L 276.6,183.5 L 279.4,178.3 L 286.1,172.4 L 293.6,172.2 L 309.4,159.8 L 310.4,155.8 L 313.7,153.3 L 312.7,150.1 L 314.3,147.5 L 314.2,140.8 L 313.3,143.7 L 310.4,133.4 L 312.5,129.1 L 318.3,128.2 L 331.2,121.0 L 340.7,110.7 L 350.5,105.5 L 350.8,99.1 L 354.6,95.7 L 364.5,93.1 L 384.1,79.4 L 386.0,80.8 L 391.2,77.1 L 392.5,78.7 L 391.4,76.6 L 395.1,79.7 L 391.3,75.2 L 391.7,71.4 L 393.4,72.3 L 392.1,73.8 L 397.3,73.8 L 396.3,75.8 L 408.1,75.7 L 409.9,77.6 L 407.6,78.5 L 410.1,79.7 L 412.9,77.6 L 431.3,74.0 L 442.5,67.8 L 448.0,67.7 L 450.5,64.3 L 453.2,64.2 L 456.1,67.3 L 454.6,67.3 L 460.2,70.4 L 453.3,62.8 L 445.7,64.0 L 449.1,60.4 L 452.4,62.0 L 448.2,59.8 L 449.6,58.8 L 448.2,54.3 L 444.1,52.4 L 444.0,50.4 L 447.1,49.1 L 457.3,50.8 L 461.3,55.9 L 472.7,53.9 L 477.4,57.2 L 484.8,58.8 L 485.8,63.0 L 492.1,65.8 L 520.9,67.2 L 540.9,60.3 L 552.7,52.2 L 564.5,49.3 L 565.8,51.5 L 592.0,43.2 L 605.2,42.9 L 612.4,47.0 L 608.0,46.8 L 604.4,49.3 L 608.0,46.8 L 612.5,47.0 L 614.7,49.5 L 613.2,50.9 L 619.0,55.2 L 619.3,57.8 L 618.8,55.7 L 620.8,56.9 L 620.6,49.3 L 628.0,52.7 L 631.4,50.7 L 645.9,60.4 L 667.9,79.5 L 685.6,82.9 L 707.1,96.2 L 714.7,104.0 L 715.1,108.4 L 708.6,112.6 L 694.2,116.6 L 697.1,118.9 L 698.6,117.9 L 703.0,124.2 L 708.7,128.2 L 720.1,131.7 L 726.3,128.2 L 725.6,131.9 L 723.3,132.7 L 723.7,136.1 L 720.4,138.7 L 727.9,142.5 L 726.2,145.1 L 731.9,150.0 L 728.8,150.7 L 732.6,152.3 L 729.5,155.5 L 733.6,158.4 L 732.1,163.6 L 736.9,165.4 L 739.1,172.8 L 741.9,174.0 L 749.9,175.5 L 754.7,173.1 L 759.0,173.8 L 760.7,176.6 L 769.8,177.5 L 767.6,182.5 L 770.8,187.2 L 770.1,197.5 L 761.9,198.7 L 749.2,209.2 L 745.7,202.3 L 738.1,195.5 L 737.7,192.3 L 725.7,190.8 L 724.6,188.7 L 712.9,193.7 L 704.1,189.2 L 699.8,182.8 L 697.8,186.3 L 690.0,187.4 L 685.9,194.5 L 682.3,197.3 L 671.2,198.4 L 665.6,196.7 L 661.7,201.0 L 660.5,209.7 L 651.3,210.6 L 654.4,212.9 L 651.2,213.0 L 649.7,215.1 L 656.6,219.2 L 646.6,226.3 L 650.0,228.1 L 645.3,236.4 L 645.2,240.7 L 649.4,241.0 L 647.0,243.5 L 647.9,245.6 L 659.5,249.2 L 662.7,245.8 L 668.2,244.9 L 666.8,248.1 L 670.3,253.5 L 679.2,253.1 L 677.9,254.5 L 681.7,253.9 L 683.0,256.2 L 687.9,254.9 L 689.7,258.1 L 686.6,260.5 L 694.9,263.4 L 693.5,265.4 L 695.3,267.0 L 702.6,267.6 L 703.8,273.2 L 698.9,273.6 L 699.1,269.6 L 692.6,271.9 L 686.7,270.4 L 686.4,276.7 L 683.1,281.4 L 679.5,282.2 L 679.9,287.9 L 681.9,287.9 L 678.9,292.6 L 680.1,294.9 L 678.3,297.9 L 669.1,300.1 L 675.9,303.9 L 672.1,304.5 L 666.3,311.5 L 667.5,315.0 L 659.5,320.0 L 653.3,320.0 L 654.6,320.7 L 653.8,324.2 L 661.2,335.8 L 654.0,338.4 L 655.1,340.8 L 668.6,338.3 L 669.9,336.6 L 666.2,334.6 L 668.1,332.3 L 675.7,330.9 L 682.4,325.0 L 688.7,323.6 L 692.6,326.3 L 692.8,331.1 L 694.4,331.7 L 691.7,343.6 L 683.6,342.2 L 682.5,346.5 L 684.5,350.2 L 661.2,351.1 L 641.7,360.0 L 637.0,359.2 L 627.2,367.4 L 626.2,371.2 L 628.2,372.3 L 627.5,375.5 L 630.6,378.8 L 642.1,383.0 L 647.3,386.5 L 647.1,389.2 L 649.0,390.8 L 661.5,394.6 L 675.6,404.9 L 681.4,406.3 L 700.0,402.6 L 705.6,404.6 L 702.1,411.7 L 692.5,414.4 L 692.4,422.2 L 689.2,429.6 L 707.0,433.1 L 702.6,433.6 L 702.7,435.7 L 699.2,436.6 L 691.2,435.0 L 682.6,437.7 L 679.1,440.0 L 680.3,444.4 L 672.1,445.2 L 672.9,447.5 L 670.7,452.2 L 672.4,453.3 L 664.0,457.0 L 666.0,463.8 L 658.1,471.1 L 664.8,474.2 L 669.4,471.2 L 672.2,473.8 L 666.3,477.9 L 654.3,480.2 L 652.6,483.8 L 663.1,487.8 L 662.9,491.8 L 658.1,492.6 L 659.2,497.8 L 657.1,501.5 L 659.8,506.0 L 667.1,511.5 L 668.4,515.2 L 664.7,521.4 L 668.2,524.6 L 673.4,535.3 L 685.4,544.8 L 690.4,551.7 L 690.5,555.6 L 693.0,556.9 L 699.4,555.5 L 700.7,563.5 L 706.2,563.1 L 723.2,556.2 L 724.3,553.3 L 727.3,553.2 L 729.5,555.7 L 736.6,557.4 L 731.8,560.3 L 737.5,559.0 L 739.1,563.2 L 743.4,563.4 L 748.9,568.8 L 758.3,572.3 L 755.3,577.5 L 766.6,588.0 L 772.0,583.6 L 773.3,586.7 L 778.3,585.1 L 779.5,589.0 L 782.4,587.3 L 787.2,588.3 L 791.7,591.7 L 788.7,593.0 L 789.0,597.3 L 783.7,600.1 L 786.2,603.1 L 783.1,612.2 L 788.1,617.6 L 785.4,623.9 L 781.1,626.0 L 786.5,634.8 L 785.8,636.6 L 782.2,636.7 L 786.3,639.3 L 785.4,643.7 L 789.8,646.0 L 782.3,648.1 L 781.4,650.1 L 783.7,651.3 L 787.2,649.6 L 783.1,655.6 L 786.7,656.7 L 786.5,660.6 L 789.8,664.5 L 787.2,674.8 L 777.5,678.8 L 774.6,683.5 L 770.9,684.0 L 770.9,687.1 L 765.1,696.6 L 764.8,694.5 L 758.3,699.3 L 755.6,699.3 L 753.8,695.5 L 755.1,693.3 L 753.9,695.8 L 752.3,695.3 L 755.1,698.3 L 752.9,695.8 L 753.7,699.8 L 750.9,699.1 L 750.8,696.3 L 747.8,698.1 L 747.1,702.3 L 745.6,701.6 L 747.3,698.4 L 745.4,701.5 L 746.2,698.9 L 743.8,700.1 L 743.0,698.3 L 749.3,694.4 L 728.2,703.2 L 733.4,702.4 L 733.8,704.3 L 724.3,703.7 L 722.3,702.3 L 723.3,701.5 L 728.7,701.4 L 732.1,698.3 L 738.7,696.7 L 742.4,691.2 L 735.5,694.2 L 737.7,695.3 L 731.3,696.9 L 729.1,700.0 L 725.7,699.7 L 727.7,698.5 L 727.2,696.2 L 735.2,693.2 L 728.2,695.0 L 723.5,698.7 L 722.8,697.0 L 725.0,697.8 L 725.1,695.9 L 720.7,698.3 L 710.6,697.0 L 698.1,698.8 L 676.1,707.5 L 653.5,722.3 L 653.0,725.7 L 646.9,729.5 L 644.9,735.1 L 645.6,742.5 L 637.0,744.7 L 637.6,746.2 L 629.2,743.7 L 614.0,749.6 L 605.4,747.2 L 596.6,751.2 L 589.4,750.2 L 577.5,751.8 L 573.4,749.1 L 534.6,744.3 L 525.0,732.0 L 513.0,723.8 L 507.5,717.1 L 503.3,716.5 L 500.3,718.5 L 489.6,716.6 L 478.2,704.8 L 474.8,695.1 L 477.1,694.8 L 474.7,694.9 L 471.2,687.8 L 472.2,687.1 L 461.7,682.0 L 463.6,678.6 L 451.0,670.2 L 446.7,671.8 L 439.8,668.6 L 430.7,670.4 L 423.0,669.6 L 418.7,672.2 L 414.3,679.3 L 413.9,682.4 L 418.7,685.0 L 403.1,686.0 L 399.4,684.2 L 391.8,688.1 L 374.4,684.1 L 366.5,687.5 L 368.2,693.4 L 354.5,691.7 L 352.1,693.0 L 352.1,695.9 L 343.2,693.7 L 328.8,686.4 L 323.1,687.8 L 315.8,685.6 L 322.0,686.3 L 326.2,682.1 L 325.5,676.1 L 320.7,669.1 L 335.3,661.6 L 338.0,656.7 L 337.5,653.5 L 344.6,650.5 L 339.2,649.8 L 340.1,647.6 L 351.2,644.8 L 347.5,643.5 L 340.7,644.8 L 328.8,651.4 L 324.8,649.7 L 326.3,649.3 L 319.1,648.9 L 303.4,637.7 L 301.0,630.8 L 302.5,637.6 L 300.1,635.6 L 299.8,637.2 L 299.2,626.5 L 299.0,637.1 L 297.6,633.3 L 294.9,632.3 L 296.6,626.9 L 294.2,631.4 L 297.4,635.5 L 293.7,633.9 L 292.9,630.1 L 292.2,633.9 L 285.8,634.1 L 286.5,629.1 L 297.8,625.1 L 295.8,624.1 L 289.5,626.5 L 293.4,623.7 L 294.2,620.2 L 281.4,627.6 L 280.1,626.5 L 281.1,627.8 L 274.3,628.3 L 250.7,623.4 L 220.9,627.0 L 214.2,632.5 L 215.7,637.0 L 218.7,637.9 L 213.0,642.6 L 212.2,645.7 L 213.9,647.4 Z"
+)
+
+WALES_ANGLESEY_PATH = (
+    "M 266.4,94.3 L 259.7,91.0 L 260.3,88.1 L 256.2,89.7 L 257.2,86.5 L 253.5,83.8 L 245.7,85.9 L 243.4,84.4 L 242.0,86.1 L 237.5,84.3 L 236.2,82.9 L 237.6,80.0 L 233.0,75.4 L 235.1,72.1 L 225.6,69.2 L 216.8,70.9 L 215.3,68.6 L 218.0,64.8 L 211.9,62.1 L 216.8,59.7 L 217.4,55.9 L 222.7,57.6 L 234.8,53.3 L 227.0,57.0 L 232.6,59.1 L 233.2,57.4 L 234.7,58.2 L 231.5,61.6 L 233.6,59.8 L 238.0,62.6 L 247.2,63.6 L 249.7,62.2 L 249.4,59.4 L 244.7,55.9 L 244.3,53.4 L 248.5,51.0 L 249.7,46.0 L 248.1,45.5 L 252.5,38.1 L 247.2,28.8 L 250.0,26.1 L 260.2,26.1 L 260.4,24.4 L 265.4,22.4 L 265.2,24.6 L 267.1,25.3 L 269.2,23.0 L 271.9,24.1 L 274.7,20.5 L 277.9,23.3 L 282.6,23.6 L 282.1,21.6 L 283.8,21.0 L 282.5,20.4 L 289.6,17.8 L 295.5,18.8 L 296.3,21.0 L 298.1,19.3 L 306.1,20.0 L 309.3,23.4 L 314.1,21.5 L 315.7,23.3 L 318.1,22.1 L 327.2,24.5 L 328.6,22.4 L 334.2,31.8 L 333.5,37.6 L 337.8,42.3 L 345.1,43.6 L 343.4,45.9 L 344.9,49.9 L 350.6,58.0 L 364.0,61.4 L 369.6,61.5 L 376.2,57.3 L 398.8,60.5 L 381.4,81.4 L 371.1,85.7 L 363.8,92.8 L 360.3,91.8 L 352.0,95.5 L 349.5,98.6 L 348.3,105.4 L 340.8,107.7 L 320.9,122.1 L 317.4,122.7 L 317.0,126.6 L 302.3,123.8 L 299.7,122.2 L 303.9,122.5 L 298.1,120.1 L 295.0,120.5 L 292.5,124.1 L 294.5,120.2 L 291.0,114.7 L 284.5,116.3 L 284.1,114.0 L 281.0,113.7 L 282.3,112.0 L 278.7,107.6 L 271.6,108.7 L 272.2,105.5 L 266.2,104.6 L 268.9,97.9 L 267.3,97.9 L 266.4,94.3 Z"
+)
+
+# Region zones are simple rectangular bands. We apply a clipPath of the
+# real coastline to the whole zone group at render time, so each band
+# only paints inside Wales — no need to redraw 50+ coastline points per
+# zone. Inland boundaries between adjacent regions are approximate.
+#
+# Layering: the first five zones (Mid Wales, Pembs, Carms, BB, Wye) form
+# a complete tiling of south Wales with no gaps. Gower and Valleys & Vale
+# are then drawn on TOP as opaque overlays — since `.wales-zone` fills
+# with parchment under the colour-mix, the overlays cleanly cover the
+# bands beneath. The English Borders zone is rendered OUTSIDE the clip
+# (it deliberately extends east of the Wales coastline).
+#
+# Centroids (cx, cy) are placed well inland so labels stay clear of the
+# clipped coast — Mid Wales ≈ Powys plateau (not Aberystwyth coast);
+# Pembrokeshire ≈ Haverfordwest; Carmarthenshire ≈ Tywi valley.
+WALES_MAP_ZONES = [
+    {
+        "full": "Mid Wales (Powys & Ceredigion)",
+        # Full-width band, clipped to Wales between y=270 (≈ Aberystwyth)
+        # and y=478 (≈ northern edge of Pembs/Brecon Beacons).
+        "d":    "M -20,270 L 840,270 L 840,478 L -20,478 Z",
+        "cx":   470, "cy": 380,
+    },
+    {
+        "full": "Pembrokeshire (South)",
+        # SW peninsula. East boundary at x=235 (Carmarthen Bay shoulder).
+        "d":    "M -20,478 L 235,478 L 235,790 L -20,790 Z",
+        "cx":   135, "cy": 615,
+        "label": ["South", "Pembrokeshire"],
+    },
+    {
+        "full": "Carmarthenshire & West Wales",
+        # Full vertical strip between Pembs and Brecons. The Gower
+        # overlay (drawn later) covers the SW corner; the label sits
+        # clear of that overlay in the upper Tywi valley.
+        "d":    "M 235,478 L 460,478 L 460,790 L 235,790 Z",
+        "cx":   350, "cy": 560,
+    },
+    {
+        "full": "Brecon Beacons / Bannau Brycheiniog",
+        # Inland uplands. No coast — fully interior. Valleys & Vale
+        # overlays the southern strip of this rect.
+        "d":    "M 460,478 L 660,478 L 660,640 L 460,640 Z",
+        "cx":   560, "cy": 555,
+    },
+    {
+        "full": "Wye Valley & Monmouthshire",
+        # East border, inside the Welsh side. Goes all the way south.
+        "d":    "M 660,478 L 800,478 L 800,790 L 660,790 Z",
+        "cx":   720, "cy": 600,
+        "label": ["Wye Valley"],
+    },
+    # ── Overlays drawn on top of the bands above ──────────────────────
+    {
+        "full": "Gower & Swansea Bay",
+        # Peninsula band hanging off the south of Carmarthenshire.
+        # Drawn AFTER Carmarthenshire so it cleanly overlays the SW.
+        "d":    "M 320,655 L 460,655 L 460,790 L 250,790 Z",
+        "cx":   355, "cy": 720,
+        "label": ["Gower &", "Swansea"],
+    },
+    {
+        "full": "Valleys & Vale of Glamorgan",
+        # SE strip below Brecons, east of Gower. Extended west to x=460
+        # to eliminate the polygon gap with Brecon Beacons / Carms.
+        "d":    "M 460,640 L 660,640 L 660,790 L 460,790 Z",
+        "cx":   560, "cy": 715,
+        "label": ["Valleys &", "Vale"],
+    },
+    {
+        "full": "English Borders (Forest of Dean & Herefordshire)",
+        # Drawn OUTSIDE the wales clip — extends beyond the border by design.
+        "d":    "M 735,485 L 780,475 L 815,505 L 815,575 L 780,615 "
+                "L 735,618 L 725,580 L 735,525 Z",
+        "cx":   775, "cy": 548,
+        "label": ["Borders"],
+    },
+]
+def _zone_shape_svg(z: dict, counts: dict, *, is_border: bool = False) -> list[str]:
+    """Render the clickable path for one region (no labels).
+
+    Sits INSIDE the wales-clip group so the band is silhouetted by the
+    real coastline. Labels live in a separate group rendered outside the
+    clip so they never get clipped.
+    """
+    meta   = REGION_META.get(z["full"], {})
+    accent = meta.get("accent", "#4a6b3e")
+    short  = meta.get("short", z["full"])
+    count  = counts.get(z["full"], 0)
+    extra_cls = " zone-over-border" if is_border else ""
+    return [
+        f'<g class="wales-zone-group wales-zone-shape" '
+        f'data-region-full="{esc(z["full"])}" '
+        f'style="--zone-color: {accent}">',
+        f'<path d="{z["d"]}" class="wales-zone{extra_cls}" '
+        f'role="button" tabindex="0" '
+        f'aria-label="{esc(short)} — {count} walks"></path>',
+        '</g>',
+    ]
+
+
+def _zone_labels_svg(z: dict, counts: dict) -> list[str]:
+    """Render the label + count text for one region (no path).
+
+    Drawn OUTSIDE the wales-clip group so the text never gets clipped by
+    the coastline — important for centroids that sit near the coast or
+    on the western edge (e.g. Mid Wales centroid above Aberystwyth).
+    """
+    meta   = REGION_META.get(z["full"], {})
+    accent = meta.get("accent", "#4a6b3e")
+    short  = meta.get("short", z["full"])
+    count  = counts.get(z["full"], 0)
+    label_lines = z.get("label") or [short]
+    line_h = 15
+    parts = [
+        f'<g class="wales-zone-group wales-zone-labels" '
+        f'data-region-full="{esc(z["full"])}" '
+        f'style="--zone-color: {accent}">',
+        f'<text x="{z["cx"]}" y="{z["cy"]}" class="zone-label" '
+        f'text-anchor="middle" pointer-events="none">',
+    ]
+    for i, line in enumerate(label_lines):
+        if i == 0:
+            parts.append(f'<tspan x="{z["cx"]}">{esc(line)}</tspan>')
+        else:
+            parts.append(f'<tspan x="{z["cx"]}" dy="{line_h}">{esc(line)}</tspan>')
+    parts.append('</text>')
+    count_y = z["cy"] + line_h * (len(label_lines) - 1) + 16
+    parts.append(
+        f'<text x="{z["cx"]}" y="{count_y}" class="zone-count" '
+        f'text-anchor="middle" pointer-events="none">{count} walks</text>'
+    )
+    parts.append('</g>')
+    return parts
+
+
+def wales_map_svg(counts: dict) -> str:
+    """Render the interactive Wales map as inline SVG.
+
+    Layering (bottom -> top):
+      1. Sea/background rect
+      2. <g clip-path="url(#wales-clip)">  ← clipped to real coastline
+         a. Parchment land base
+         b. North Wales "coming soon" band
+         c. Zone SHAPES (paths only) — base bands then opaque overlays
+      3. English Borders zone shape (outside clip — extends past Wales)
+      4. Coastline strokes (mainland + Anglesey)
+      5. Zone LABELS + counts (OUTSIDE clip, so they're never clipped)
+      6. North Wales "coming soon" label
+    """
+    parts = [
+        f'<svg viewBox="{WALES_MAP_VIEWBOX}" class="wales-svg" '
+        f'role="img" aria-label="Map of Wales — click a region to filter walks" '
+        f'preserveAspectRatio="xMidYMid meet">',
+        # Defs: clipPath using the actual ONS Wales coastline. Both shapes are
+        # included so paths drawn inside the clip group also paint Anglesey.
+        '<defs>',
+        '<clipPath id="wales-clip">',
+        f'<path d="{WALES_MAINLAND_PATH}"/>',
+        f'<path d="{WALES_ANGLESEY_PATH}"/>',
+        '</clipPath>',
+        '</defs>',
+        # 1. Sea / outer canvas — kept very subtle so the land pops.
+        '<rect class="wales-sea" x="0" y="0" width="820" height="780"/>',
+        # 2. Everything that should stop at the coastline.
+        '<g clip-path="url(#wales-clip)">',
+        # 2a. Parchment land fill spanning the full canvas; clip handles the rest.
+        '<rect class="wales-land" x="-20" y="-20" width="860" height="820"/>',
+        # 2b. North Wales "coming soon" band — full-width rect, clipped, so it
+        # naturally takes the shape of the actual north Wales coastline + Anglesey.
+        '<rect x="-20" y="-20" width="860" height="290" class="zone-future" '
+        'aria-hidden="true"/>',
+    ]
+    # 2c. Zone shapes (paths only). Order in WALES_MAP_ZONES is significant:
+    # base bands first (Mid Wales, Pembs, Carms, BB, Wye), then overlays
+    # (Gower, Valleys & Vale) which paint on top with opaque fill.
+    for z in WALES_MAP_ZONES:
+        if z["full"].startswith("English Borders"):
+            continue
+        parts.extend(_zone_shape_svg(z, counts, is_border=False))
+    parts.append('</g>')  # close clip group
+
+    # 3. English Borders zone — shape outside the clip (extends past border).
+    for z in WALES_MAP_ZONES:
+        if not z["full"].startswith("English Borders"):
+            continue
+        parts.extend(_zone_shape_svg(z, counts, is_border=True))
+
+    # 4. Coastline strokes — drawn on top of the regions, no fill, just outline.
+    parts.append(
+        f'<path d="{WALES_MAINLAND_PATH}" class="wales-coast" '
+        f'pointer-events="none" aria-hidden="true"/>'
+    )
+    parts.append(
+        f'<path d="{WALES_ANGLESEY_PATH}" class="wales-coast" '
+        f'pointer-events="none" aria-hidden="true"/>'
+    )
+
+    # 5. Zone LABELS — outside the clip so they never get truncated by the
+    # coastline. Order doesn't matter for labels (they don't overlap).
+    for z in WALES_MAP_ZONES:
+        parts.extend(_zone_labels_svg(z, counts))
+
+    # 6. North Wales label, positioned over the visible north Wales body.
+    parts.append(
+        '<text x="430" y="145" class="future-label" text-anchor="middle" '
+        'pointer-events="none">North Wales</text>'
+    )
+    parts.append(
+        '<text x="430" y="170" class="future-sub" text-anchor="middle" '
+        'pointer-events="none">coming soon</text>'
+    )
+
+    parts.append('</svg>')
+    return "\n".join(parts)
 
 # ---------------------------------------------------------------------------
 # Photo bank: per-feature Unsplash image IDs for each walk's detail gallery.
@@ -410,6 +652,7 @@ def region_tile(t):
 
 featured_html = "\n".join(featured_card(w) for w in featured_walks)
 region_tiles_html = "\n".join(region_tile(t) for t in region_tiles)
+wales_map_html = wales_map_svg(region_counts)
 
 # ---------------------------------------------------------------------------
 # HTML template
@@ -624,6 +867,69 @@ nav.site{
   text-transform:uppercase;color:rgba(250,246,238,.8);font-weight:700}
 .f-stats b{color:var(--amber);font-family:"Fraunces",serif;font-weight:500;font-size:1.15rem;
   margin-right:.25rem;text-transform:none;letter-spacing:0;display:inline-block}
+
+/* ─── Wales map ──────────────────────────────────────────── */
+.wales-map-wrap{
+  max-width:720px;margin:0 auto 2.2rem;padding:1rem 1.2rem 1.4rem;
+  background:var(--card);border:1px solid var(--border);border-radius:16px;
+  box-shadow:var(--shadow-sm);
+}
+.wales-svg{display:block;width:100%;height:auto;font-family:inherit}
+/* Sea / land / coast — sets the cartographic backdrop. */
+.wales-sea{fill:transparent}
+.wales-land{fill:var(--bg)}
+.wales-coast{
+  fill:none;
+  stroke:color-mix(in srgb, var(--ink-soft) 70%, transparent);
+  stroke-width:1.1;stroke-linejoin:round;stroke-linecap:round;
+}
+.wales-zone-group{--zone-color:var(--moss)}
+/* Fill blends the zone accent with the parchment background (opaque),
+   so overlay zones (Gower, Valleys & Vale) cleanly cover the bands they
+   sit on top of without showing two layers of tint stacking up. */
+.wales-zone{
+  fill:color-mix(in srgb, var(--zone-color) 24%, var(--bg));
+  stroke:color-mix(in srgb, var(--zone-color) 55%, var(--bg));
+  stroke-width:1;
+  cursor:pointer;transition:fill .18s,stroke .18s,filter .18s;
+}
+.wales-zone:hover{fill:color-mix(in srgb, var(--zone-color) 44%, var(--bg));stroke:var(--zone-color);stroke-width:1.6}
+.wales-zone:focus{outline:0;stroke:var(--zone-color);stroke-width:2.2;filter:drop-shadow(0 0 3px rgba(74,107,62,.35))}
+.wales-zone-group.on .wales-zone{fill:color-mix(in srgb, var(--zone-color) 78%, var(--bg));stroke:var(--zone-color);stroke-width:1.8}
+.wales-zone-group.on .zone-label,
+.wales-zone-group.on .zone-count{fill:var(--cream)}
+.zone-over-border{stroke-dasharray:5 4;opacity:.9}
+/* paint-order:stroke gives the label a parchment halo so the coastline
+   line doesn't cut visually through any letters that happen to sit near
+   the coast. The stroke colour matches the land fill. */
+.zone-label{
+  font-family:"Fraunces",serif;font-weight:500;font-size:14px;
+  fill:var(--ink);pointer-events:none;
+  paint-order:stroke fill;
+  stroke:var(--bg);stroke-width:3;stroke-linejoin:round;
+}
+.zone-count{
+  font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+  fill:var(--muted);font-weight:700;pointer-events:none;
+  paint-order:stroke fill;
+  stroke:var(--bg);stroke-width:3;stroke-linejoin:round;
+}
+.zone-future{fill:color-mix(in srgb, var(--ink) 7%, var(--bg));stroke:var(--border);stroke-width:1;stroke-dasharray:3 4;opacity:.85}
+.future-label{
+  font-family:"Fraunces",serif;font-weight:500;font-size:16px;
+  fill:var(--ink-soft);letter-spacing:.02em;
+  paint-order:stroke fill;stroke:var(--bg);stroke-width:3;stroke-linejoin:round;
+}
+.future-sub{
+  font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+  fill:var(--muted);font-weight:700;
+  paint-order:stroke fill;stroke:var(--bg);stroke-width:3;stroke-linejoin:round;
+}
+@media(max-width:620px){
+  .wales-map-wrap{padding:.6rem .6rem 1rem}
+  .zone-label{font-size:12px}
+  .zone-count{font-size:9px}
+}
 
 /* ─── Region tiles ───────────────────────────────────────── */
 .regions{display:grid;grid-template-columns:repeat(4,1fr);gap:.9rem}
@@ -955,8 +1261,9 @@ footer.site{background:var(--slate);color:var(--cream);padding:3.5rem 0 2rem;mar
         <div class="section-eyebrow">Explore by region</div>
         <h2 class="section-title">From <em>coast</em> to <em>cantref</em>.</h2>
       </div>
-      <p class="section-sub">Tap a region to filter the finder below. Every walk was field-verified by a Monmouth local (well, their notebook).</p>
+      <p class="section-sub">Click a region on the map to filter — pick more than one if you like. Every walk was field-verified by a Monmouth local (well, their notebook).</p>
     </div>
+    <div class="wales-map-wrap">__WALES_MAP_SVG__</div>
     <div class="regions">__REGION_TILES__</div>
   </div>
 </section>
@@ -1166,9 +1473,58 @@ $$('.region-tile').forEach(t => t.addEventListener('click', () => {
   $$('.chip[data-chip-kind="region-short"]').forEach(c => {
     c.classList.toggle("on", c.dataset.v === wanted);
   });
+  syncMapFromChips();
   apply();
   document.getElementById("finder").scrollIntoView({behavior:"smooth"});
 }));
+
+// Wales map zones → multi-select toggle, mirror to chips, scroll to finder.
+// Each region now has TWO groups in the SVG (one for the shape inside the
+// clip path, one for the label outside it) — both share the same
+// data-region-full and we toggle .on on BOTH so the highlight + label
+// inversion stay in sync.
+function zoneToShort(full){
+  return (REGION_SHORT && REGION_SHORT[full]) || full;
+}
+function setZoneOn(full, on){
+  $$('.wales-zone-group').forEach(g => {
+    if (g.dataset.regionFull === full) g.classList.toggle("on", on);
+  });
+}
+function syncMapFromChips(){
+  const active = new Set(selected("region-short"));
+  $$('.wales-zone-group').forEach(g => {
+    const short = zoneToShort(g.dataset.regionFull);
+    g.classList.toggle("on", active.has(short));
+  });
+}
+// Click handlers attach only to the shape groups (those have the path).
+$$('.wales-zone-shape').forEach(g => {
+  const path = g.querySelector('.wales-zone');
+  const toggle = () => {
+    const full  = g.dataset.regionFull;
+    const short = zoneToShort(full);
+    const chip  = document.querySelector(
+      `.chip[data-chip-kind="region-short"][data-v="${CSS.escape(short)}"]`
+    );
+    if (!chip) return;
+    chip.classList.toggle("on");
+    setZoneOn(full, chip.classList.contains("on"));
+    apply();
+    document.getElementById("finder").scrollIntoView({behavior:"smooth"});
+  };
+  if (path){
+    path.addEventListener("click", toggle);
+    path.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " "){ e.preventDefault(); toggle(); }
+    });
+  }
+});
+
+// Keep map zones in sync when chips are clicked directly
+$$('.chip[data-chip-kind="region-short"]').forEach(c =>
+  c.addEventListener("click", () => setTimeout(syncMapFromChips, 0))
+);
 
 // Featured cards → search by walk name, scroll to finder, auto-open details
 $$('.feat').forEach(card => card.addEventListener('click', () => {
@@ -1192,6 +1548,7 @@ $$('.feat').forEach(card => card.addEventListener('click', () => {
 function reset(){
   $("#search").value = "";
   $$(".chip.on").forEach(c => c.classList.remove("on"));
+  $$(".wales-zone-group.on").forEach(g => g.classList.remove("on"));
   $$('#poi-list input:checked').forEach(c => c.checked = false);
   ["dogs-yes","offlead","pushchair","family"].forEach(id => $("#"+id).checked = false);
   $("#drive-max").value = $("#drive-max").max;
@@ -1432,6 +1789,7 @@ HTML = (HTML
     .replace("__YEAR__", str(datetime.date.today().year))
     .replace("__FEATURED_HTML__", featured_html)
     .replace("__REGION_TILES__", region_tiles_html)
+    .replace("__WALES_MAP_SVG__", wales_map_html)
     .replace("__DATA_JSON__", json.dumps(data, ensure_ascii=False))
     .replace("__REGIONS_JSON__", json.dumps(regions, ensure_ascii=False))
     .replace("__DIFFS_JSON__", json.dumps(difficulties, ensure_ascii=False))
