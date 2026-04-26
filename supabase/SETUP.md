@@ -115,3 +115,54 @@ Supabase free tier: **2 projects, 500 MB database, 50k monthly auth users,
 2 GB file storage, 5 GB egress, 500k edge function invocations**. Ratings
 use ~1 KB per row, so ~500,000 ratings fit free. You'll only hit limits
 with scale most founders would kill for.
+
+---
+
+## Editors (task #44)
+
+The same Supabase project also gates access to the `/editor.html` page. The
+schema includes a `public.editors` allow-list table; only users whose row
+appears there can open the editor.
+
+### One-time: add yourself as the first editor
+
+1. Visit https://edition74.github.io/south-wales-walks/editor.html and sign
+   in with your usual editor email (`edition74@outlook.com`). The
+   magic-link form will email you a one-time link. Click it. You'll land
+   back on the editor page; it'll show "Sorry, you're not on the editors
+   list" — that's expected, you haven't been added yet.
+2. Open the Supabase SQL Editor and run:
+   ```sql
+   insert into public.editors (user_id, email, display_name)
+   select id, email, 'Jason'
+   from auth.users
+   where email = 'edition74@outlook.com';
+   ```
+3. Refresh the editor page. You should pass the gate and be prompted for
+   a GitHub Personal Access Token (one-off paste, stored in your browser).
+
+### Adding a future editor
+
+Same flow:
+
+1. They sign in via the editor page (creates their `auth.users` row).
+2. You run:
+   ```sql
+   insert into public.editors (user_id, email, display_name)
+   select id, email, 'Their Name'
+   from auth.users where email = 'theirs@example.com';
+   ```
+3. They refresh — they're in.
+
+### Removing an editor
+
+```sql
+delete from public.editors where email = 'theirs@example.com';
+```
+
+### Why no self-service signup?
+
+The `editors` table has only a SELECT policy and no INSERT/UPDATE/DELETE
+policies. Writes are only possible via the SQL Editor with the service-role
+key, which only you have. There is deliberately no API surface for someone
+to add themselves.

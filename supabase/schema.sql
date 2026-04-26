@@ -115,3 +115,35 @@ grant execute on function public.walk_rating_aggregates() to anon, authenticated
 -- ---------------------------------------------------------------------------
 create index if not exists ratings_walk_id_updated_idx
   on public.ratings (walk_id, updated_at desc);
+
+-- ---------------------------------------------------------------------------
+-- Editors allow-list (task #44). Anyone can magic-link sign in (same as the
+-- ratings flow), but only users whose row appears in this table can open the
+-- editor and commit walks to the repo. To add an editor:
+--
+--   1. They sign in once via the editor page magic-link form. This creates
+--      their auth.users row.
+--   2. You run, in the SQL Editor:
+--        insert into public.editors (user_id, email, display_name)
+--        select id, email, 'Their Name'
+--        from auth.users where email = 'theirs@example.com';
+--   3. They refresh the editor page. They're in.
+-- ---------------------------------------------------------------------------
+create table if not exists public.editors (
+  user_id      uuid        primary key references auth.users(id) on delete cascade,
+  email        text        not null,
+  display_name text,
+  added_at     timestamptz not null default now()
+);
+
+alter table public.editors enable row level security;
+
+-- An editor can see only their own row. The editor.html JS uses this to
+-- answer "am I a registered editor?" without exposing the full editor list.
+drop policy if exists editors_select_own on public.editors;
+create policy editors_select_own on public.editors
+  for select using (auth.uid() = user_id);
+
+-- Inserts/updates/deletes happen only via the SQL Editor (you, with the
+-- service role). No RLS policy means no role can write through PostgREST.
+-- This is intentional: editor membership is never self-service.
