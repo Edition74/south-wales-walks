@@ -63,9 +63,15 @@ create policy ratings_delete_own on public.ratings
 -- ---------------------------------------------------------------------------
 -- Public aggregate view — anyone (including anon) can read averages and
 -- counts per walk, but never individual rows.
+--
+-- IMPORTANT: security_invoker=false (definer mode). The view must bypass the
+-- ratings_select_own policy, otherwise anon visitors get zero rows and every
+-- walk shows ☆☆☆☆☆ (0) even after people have rated. The view only exposes
+-- aggregate columns (count + averages) — no comments, no user_ids — so this
+-- doesn't leak PII. The grants below are what gates access.
 -- ---------------------------------------------------------------------------
 create or replace view public.walk_rating_aggregates
-with (security_invoker = true) as
+with (security_invoker = false) as
 select
   walk_id,
   count(*)::int                              as n,
