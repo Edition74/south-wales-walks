@@ -912,6 +912,16 @@ nav.site{
   font-size:.82rem;font-weight:600;border:1px solid var(--slate);transition:all .2s;
 }
 .nav-cta:hover{background:var(--bracken);border-color:var(--bracken)}
+
+/* Editor sign-in link — visible but lower-key than the public nav items */
+.nav-editor{
+  font-size:.78rem;color:var(--muted)!important;font-weight:500;
+  display:inline-flex;align-items:center;gap:.3rem;
+  padding:.35rem .6rem;border-radius:6px;border:1px dashed var(--border);
+  transition:all .15s;
+}
+.nav-editor::before{content:"🔒";font-size:.8rem;line-height:1}
+.nav-editor:hover{color:var(--bracken)!important;border-color:var(--bracken);background:var(--paper)}
 @media(max-width:720px){
   .nav-links a:not(.nav-cta){display:none}
   .brand-sub{display:none}
@@ -1330,6 +1340,46 @@ details[open].filters>summary::after{transform:rotate(180deg)}
   text-transform:uppercase;padding:.22rem .58rem;border-radius:999px;
   background:var(--moss);color:var(--cream);font-family:"Inter",sans-serif}
 
+/* ─── Editor page ───────────────────────────────────────────── */
+.editor-page{padding:3rem 0 4rem;min-height:60vh}
+.editor-page .container{max-width:560px}
+.editor-page h1{font-family:"Fraunces",serif;font-weight:500;font-size:1.6rem;
+  margin:0 0 .9rem;color:var(--ink);font-variation-settings:"opsz" 72;line-height:1.2}
+.gate{background:var(--card);border:1px solid var(--border);border-radius:14px;
+  box-shadow:var(--shadow-sm);padding:2rem 1.8rem;text-align:center}
+.gate.hidden{display:none}
+.gate p{color:var(--ink-soft);line-height:1.6;margin:0 0 1.1rem}
+.gate p:last-child{margin-bottom:0}
+.gate-icon{font-size:1.8rem;margin:0 0 .5rem;opacity:.65}
+.editor-form{display:flex;flex-direction:column;gap:.6rem;margin-top:.8rem;text-align:left}
+.editor-form input,.editor-form textarea,.editor-form select{
+  font:inherit;font-size:.92rem;padding:.65rem .85rem;border:1px solid var(--border);
+  border-radius:8px;background:var(--paper);color:var(--ink);width:100%;
+  box-sizing:border-box;font-family:"Inter",sans-serif}
+.editor-form input:focus,.editor-form textarea:focus,.editor-form select:focus{
+  outline:2px solid var(--bracken);outline-offset:1px;border-color:var(--bracken)}
+.editor-form button{font:inherit;font-size:.92rem;font-weight:600;padding:.7rem 1.2rem;
+  background:var(--moss);color:var(--cream);border:0;border-radius:8px;cursor:pointer;
+  font-family:"Inter",sans-serif;transition:background .15s}
+.editor-form button:hover{background:#3a5638}
+.gate-status{font-size:.85rem;color:var(--muted);min-height:1.2em;margin-top:.6rem;text-align:center}
+.gate-status.error{color:#8b3f17}
+.gate-status.success{color:var(--moss)}
+.gate-actions{display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap;margin-top:1.2rem}
+.gate-action-secondary{background:transparent;color:var(--ink-soft);border:1px solid var(--border);
+  font:inherit;font-size:.82rem;padding:.45rem .9rem;border-radius:8px;cursor:pointer;
+  font-family:"Inter",sans-serif;transition:all .15s}
+.gate-action-secondary:hover{border-color:var(--bracken);color:var(--bracken)}
+.pat-help{background:var(--paper);border:1px solid var(--border);border-radius:8px;
+  padding:.9rem 1.1rem;margin:1rem 0;font-size:.85rem;line-height:1.5;text-align:left}
+.pat-help ol{margin:.4rem 0 .2rem 1.1rem;padding:0;color:var(--ink-soft)}
+.pat-help li{margin:.35rem 0}
+.pat-help code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;
+  background:#fff;padding:.1rem .35rem;border-radius:4px;border:1px solid var(--border-soft)}
+.pat-help a{color:var(--bracken);font-weight:600;text-decoration:underline;text-decoration-color:var(--stone)}
+.editor-meta{font-size:.78rem;color:var(--muted);margin:.2rem 0 1.2rem;text-align:center}
+.editor-meta strong{color:var(--ink-soft);font-weight:600}
+
 .empty{padding:3rem 1rem;text-align:center;background:var(--card);
   border-radius:14px;border:1px dashed var(--border);color:var(--muted);
   grid-column:1/-1}
@@ -1468,6 +1518,7 @@ footer.site{background:var(--slate);color:var(--cream);padding:3.5rem 0 2rem;mar
       <a href="#regions">Regions</a>
       <a href="#finder">Find a walk</a>
       <a href="#about">About</a>
+      <a class="nav-editor" href="editor.html" title="Editor sign-in (registered editors only)">Editor</a>
       <a class="nav-cta" href="#finder">Explore →</a>
     </div>
   </div>
@@ -2541,3 +2592,169 @@ for walk in data:
 
 print(f"Wrote {written} per-walk pages → {WALKS_DIR}")
 print(f"  near Monmouth (<=60min): {near_count}")
+
+# ---------------------------------------------------------------------------
+# Editor page (task #44). Auth-gated content-management page reachable from
+# the top nav. The page itself is just a shell — all logic lives in
+# editor.js, which talks to Supabase for auth + the editors allow-list, then
+# eventually (next session, task #45) commits walk JSON + GPX files to the
+# repo via the GitHub API.
+# ---------------------------------------------------------------------------
+EDITOR_HTML = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Editor · South Wales Walks</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#2f4530">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+{SHARED_CSS}
+</style>
+</head>
+<body>
+
+<nav class="site">
+  <div class="container nav-row">
+    <a class="brand" href="./">{LOGO_SVG}
+      <div>
+        <div class="brand-name"><b>South Wales</b> Walks</div>
+        <span class="brand-sub">Curated · Wild · Walkable</span>
+      </div>
+    </a>
+    <div class="nav-links">
+      <a href="./#regions">Regions</a>
+      <a href="./#finder">Find a walk</a>
+      <a href="./#about">About</a>
+    </div>
+  </div>
+</nav>
+
+<main class="editor-page">
+  <div class="container">
+
+    <!-- Loading: shown while we boot Supabase + check the auth state. -->
+    <div id="gate-loading" class="gate">
+      <div class="gate-icon">⏳</div>
+      <p>Loading editor…</p>
+    </div>
+
+    <!-- Sign-in: shown when there's no Supabase session. -->
+    <div id="gate-signin" class="gate hidden">
+      <div class="gate-icon">🔒</div>
+      <h1>Editor sign-in</h1>
+      <p>Editing the South Wales Walks site is restricted to registered editors. Sign in with your editor email and we'll send you a one-time link.</p>
+      <form id="signin-form" class="editor-form">
+        <input type="email" id="signin-email" required autocomplete="email" placeholder="you@example.com">
+        <button type="submit">Email me a link</button>
+      </form>
+      <div id="signin-status" class="gate-status"></div>
+    </div>
+
+    <!-- Checking: shown while we query the editors allow-list table. -->
+    <div id="gate-checking" class="gate hidden">
+      <div class="gate-icon">🪪</div>
+      <p>Checking your editor status…</p>
+    </div>
+
+    <!-- Denied: signed in, but no row in the editors table. -->
+    <div id="gate-denied" class="gate hidden">
+      <div class="gate-icon">🚫</div>
+      <h1>Sorry, you're not on the editors list</h1>
+      <p>This account isn't registered as an editor for South Wales Walks. If you think this is a mistake, contact the site owner — they can add your account once you've signed in once.</p>
+      <p class="editor-meta">Signed in as <strong id="denied-email">…</strong></p>
+      <div class="gate-actions">
+        <button id="denied-signout" class="gate-action-secondary" type="button">Sign out</button>
+      </div>
+    </div>
+
+    <!-- PAT prompt: signed in + editor, but no GitHub PAT in localStorage. -->
+    <div id="gate-pat" class="gate hidden">
+      <div class="gate-icon">🔑</div>
+      <h1>One more thing — your GitHub token</h1>
+      <p>The editor commits walks straight to your GitHub repo. To do that, it needs a personal access token. You generate this once in your GitHub settings; it's stored in this browser only.</p>
+      <div class="pat-help">
+        <strong>To generate one:</strong>
+        <ol>
+          <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub → Settings → Developer settings → Fine-grained tokens → New token</a></li>
+          <li>Token name: <code>South Wales Walks editor</code></li>
+          <li>Expiration: 90 days (or longer if you prefer)</li>
+          <li>Repository access: <strong>Only select repositories</strong> → pick <code>Edition74/south-wales-walks</code></li>
+          <li>Repository permissions: <strong>Contents → Read &amp; write</strong> (everything else stays "No access")</li>
+          <li>Click <strong>Generate token</strong>, copy it, paste it below.</li>
+        </ol>
+      </div>
+      <form id="pat-form" class="editor-form">
+        <input type="password" id="pat-input" required autocomplete="off" placeholder="github_pat_…">
+        <button type="submit">Save token &amp; continue</button>
+      </form>
+      <div id="pat-status" class="gate-status"></div>
+      <p class="editor-meta">Stored only in this browser's localStorage. It never leaves your device.</p>
+      <div class="gate-actions">
+        <button id="pat-signout" class="gate-action-secondary" type="button">Sign out</button>
+      </div>
+    </div>
+
+    <!-- App: signed in + editor + PAT. Today's session: confirmation message
+         only. Next session: the actual walk-creation form lands here. -->
+    <div id="editor-app" class="gate hidden">
+      <div class="gate-icon">✓</div>
+      <h1>Welcome, <span id="editor-name">editor</span></h1>
+      <p>You're signed in and your GitHub token is saved. <strong>The walk-creation form lands in the next build.</strong> When it does, this page becomes the place to draft new walks, upload GPX files, and publish straight to the repo.</p>
+      <p class="editor-meta">Signed in as <strong id="app-email">…</strong></p>
+      <div class="gate-actions">
+        <button id="app-reset-pat" class="gate-action-secondary" type="button">Forget GitHub token</button>
+        <button id="app-signout" class="gate-action-secondary" type="button">Sign out</button>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer class="site">
+  <div class="container">
+    <div class="foot-grid">
+      <div>
+        <div class="foot-brand">
+          {LOGO_SVG_FOOTER}
+          <div>
+            <div class="foot-brand-text">South Wales Walks</div>
+            <span class="foot-brand-sub">Cerddwr · Walking guide</span>
+          </div>
+        </div>
+        <p class="foot-tagline">A hand-compiled, free, ad-free guide to the best walks of South Wales.</p>
+      </div>
+      <div class="foot-col">
+        <h5>Navigate</h5>
+        <a href="./#top">Home</a>
+        <a href="./#regions">Regions</a>
+        <a href="./#finder">All walks</a>
+      </div>
+      <div class="foot-col">
+        <h5>The small print</h5>
+        <span>Editor access is restricted to registered editors. Walks are published direct to the public repo.</span>
+      </div>
+    </div>
+    <div class="foot-legal">
+      <span>© {datetime.date.today().year} Jason · South Wales Walks</span>
+      <span>Editor build · <em style="font-style:italic">Cerddwch yn ofalus</em></span>
+    </div>
+  </div>
+</footer>
+
+<script>
+window.__SUPABASE_URL__      = "{SUPABASE_URL}";
+window.__SUPABASE_ANON_KEY__ = "{SUPABASE_ANON_KEY}";
+</script>
+<script src="editor.js"></script>
+
+</body>
+</html>
+"""
+
+EDITOR_OUT = HERE / "editor.html"
+EDITOR_OUT.write_text(EDITOR_HTML, encoding="utf-8")
+print(f"Wrote {EDITOR_OUT}")
