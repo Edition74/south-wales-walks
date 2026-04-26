@@ -176,7 +176,154 @@ for rec in data:
     _slug_seen[base] = n
     rec["slug"] = base if n == 1 else f"{base}-{n}"
 
+# ---------------------------------------------------------------------------
+# Conditions & seasonality flags (task #36).
+#
+# We derive structured fields from the existing free-text columns rather than
+# hand-tagging 167 walks. The keyword rules below capture the high-signal
+# patterns (tide / causeway, MoD firing, lambing, cattle, stiles, etc.) and
+# leave the original hazards/notes prose intact below as narrative context.
+#
+# If a derivation gets one wrong, the fix is to tweak the underlying text
+# (e.g. add "stiles" to the terrain field) — next build picks it up. We can
+# add explicit override fields later if false-positives become an issue.
+# ---------------------------------------------------------------------------
+CONDITION_META = {
+    "tide": {
+        "icon": "🌊", "label": "Tide-dependent",
+        "desc": "Sections of this route are only crossable at low tide — check tide tables before setting out.",
+        "card_label": "Tide check", "severity": "warn",
+    },
+    "mod_range": {
+        "icon": "🚫", "label": "MoD range — check firing days",
+        "desc": "Crosses or skirts an active MoD live-firing range. Open only on non-firing days, which vary week-to-week.",
+        "card_label": "MoD range", "severity": "warn",
+    },
+    "exposed_summit": {
+        "icon": "🏔️", "label": "Exposed summit",
+        "desc": "No shelter on the upper sections — weather can change fast. Take warm/waterproof layers even in summer.",
+        "card_label": "Exposed", "severity": "warn",
+    },
+    "lambing": {
+        "icon": "🐑", "label": "Lambing season (Mar–May)",
+        "desc": "Crosses sheep-grazing land. Dogs on a short lead during lambing — even friendly dogs can panic ewes.",
+        "card_label": None, "severity": "info",
+    },
+    "cattle": {
+        "icon": "🐄", "label": "Cattle on path",
+        "desc": "Cows, sometimes with calves, may be on or near the path. Give them wide berth — never walk between cow and calf.",
+        "card_label": None, "severity": "info",
+    },
+    "stiles": {
+        "icon": "🪜", "label": "Stiles on route",
+        "desc": "Includes stile crossings. Worth knowing if you're walking with a large dog, small children, or anyone with limited mobility.",
+        "card_label": None, "severity": "info",
+    },
+    "ford_or_crossing": {
+        "icon": "💧", "label": "Water crossing",
+        "desc": "Includes a ford, stepping stones, or stream crossing — can be impassable after heavy rain.",
+        "card_label": None, "severity": "info",
+    },
+    "flood_risk": {
+        "icon": "🌧️", "label": "Floods after rain",
+        "desc": "Sections of this route flood after heavy rain. Best avoided in wet spells.",
+        "card_label": None, "severity": "info",
+    },
+    "winter_kit": {
+        "icon": "❄️", "label": "Winter kit needed",
+        "desc": "In winter you'll want warm layers, waterproofs, a map/compass, and possibly microspikes or poles.",
+        "card_label": None, "severity": "info",
+    },
+    "busy_weekends": {
+        "icon": "👥", "label": "Busy at weekends",
+        "desc": "Popular route — start early or pick a weekday for a quieter walk and easier parking.",
+        "card_label": None, "severity": "info",
+    },
+}
+
+MONTH_LETTERS = ["J","F","M","A","M","J","J","A","S","O","N","D"]
+MONTH_NAMES   = ["January","February","March","April","May","June",
+                 "July","August","September","October","November","December"]
+
+def derive_conditions(w):
+    """Return {best_months, condition_flags, peak_note} for a walk record.
+
+    Pure function over the existing free-text fields produced by `short(row)`.
+    """
+    season  = (w.get("season")   or "").lower()
+    hazards = (w.get("notes")    or "").lower()
+    terrain = (w.get("terrain")  or "").lower()
+    features= (w.get("features") or "").lower()
+    poi     = (w.get("poi")      or "").lower()
+    leash   = (w.get("leash")    or "").lower()
+    tags    = w.get("tags") or []
+    elev    = w.get("elev") if isinstance(w.get("elev"), (int, float)) else 0
+    blob    = " | ".join([season, hazards, terrain, features, poi, leash])
+
+    # ---- Best months: parse common range patterns; default = all year ----
+    best_months = list(range(1, 13))
+    range_patterns = [
+        (r"april[–\-]oct(?:ober)?",      [4,5,6,7,8,9,10]),
+        (r"apr[–\-]oct(?:ober)?",        [4,5,6,7,8,9,10]),
+        (r"easter[–\-]october",          [4,5,6,7,8,9,10]),
+        (r"may[–\-]oct(?:ober)?",        [5,6,7,8,9,10]),
+        (r"may[–\-]sept?(?:ember)?",     [5,6,7,8,9]),
+        (r"spring[–\-]autumn",           [3,4,5,6,7,8,9,10,11]),
+        (r"summer\b",                    [6,7,8]),
+    ]
+    for pat, months in range_patterns:
+        if re.search(pat, season):
+            best_months = months
+            break
+    # Schedule-dependent (MoD non-firing) → empty signals "varies"
+    if any(k in season for k in ["non-firing", "access open", "firing days only"]):
+        best_months = []
+
+    # ---- Peak note: parenthetical aside that's NOT just a generic caveat ----
+    peak_note = None
+    pm = re.search(r"\(([^)]+)\)", w.get("season") or "")
+    if pm:
+        inside = pm.group(1).strip()
+        if not re.match(r"(?i)^(winter|best|all year|check)", inside):
+            peak_note = inside
+
+    # ---- Condition flags ----
+    flags = []
+    if any(k in blob for k in ["tide", "tidal", "causeway"]):                       flags.append("tide")
+    if any(k in blob for k in ["mod range", "non-firing", "firing days",
+                               "access open days", "castlemartin", "pendine range"]): flags.append("mod_range")
+    if "Mountain / Summit" in tags and elev >= 500:                                 flags.append("exposed_summit")
+    elif "exposed" in hazards and ("summit" in features or "ridge" in features):    flags.append("exposed_summit")
+    if "sheep" in leash or "sheep" in hazards or "lambing" in blob:                 flags.append("lambing")
+    if "cattle" in blob or "cows" in blob:                                          flags.append("cattle")
+    if "stile" in blob:                                                             flags.append("stiles")
+    if any(k in blob for k in ["ford", "stepping stone", "river crossing", "wade"]):flags.append("ford_or_crossing")
+    if "flood" in hazards:                                                          flags.append("flood_risk")
+    if "winter needs kit" in season or "winter kit" in blob:                        flags.append("winter_kit")
+    elif "exposed_summit" in flags and elev >= 600:                                 flags.append("winter_kit")
+    if any(k in blob for k in ["busy at weekends", "busy weekends",
+                               "very popular", "popular at weekends"]):             flags.append("busy_weekends")
+
+    return {
+        "best_months":      best_months,
+        "condition_flags":  flags,
+        "peak_note":        peak_note,
+    }
+
+for rec in data:
+    cond = derive_conditions(rec)
+    rec["best_months"]     = cond["best_months"]
+    rec["condition_flags"] = cond["condition_flags"]
+    rec["peak_note"]       = cond["peak_note"]
+
+# Audit summary so we can see at a glance how the rules played out
+from collections import Counter
+_flag_counts = Counter(f for r in data for f in r["condition_flags"])
 print(f"Prepared {len(data)} walks")
+print(f"  condition flags: {dict(_flag_counts.most_common())}")
+print(f"  schedule-dependent (no fixed best months): "
+      f"{sum(1 for r in data if not r['best_months'])}")
+print(f"  with peak notes: {sum(1 for r in data if r['peak_note'])}")
 
 # ---------------------------------------------------------------------------
 # Region metadata: short name, tagline, accent colour, Unsplash image.
@@ -1137,6 +1284,52 @@ details[open].filters>summary::after{transform:rotate(180deg)}
 .walk-section .walk-map{margin:.6rem 0}
 .walk-section .walk-gallery{margin:.4rem 0 1rem}
 
+/* ─── Conditions & seasonality ──────────────────────────────── */
+.month-bar{display:grid;grid-template-columns:repeat(12,1fr);gap:.25rem;margin:.4rem 0 .6rem}
+.month-bar .m{aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+  border-radius:6px;font-size:.7rem;font-weight:600;font-family:"Inter",sans-serif;
+  color:var(--muted);background:var(--bg);border:1px solid var(--border)}
+.month-bar .m.on{background:var(--moss);color:var(--cream);border-color:var(--moss)}
+.month-bar .m.peak{background:var(--amber);color:var(--ink);border-color:var(--amber)}
+.month-bar .m.now{outline:2px solid var(--bracken);outline-offset:1px;font-weight:700}
+.month-legend{font-size:.72rem;color:var(--muted);margin:.2rem 0 .9rem;
+  display:flex;gap:1rem;flex-wrap:wrap}
+.month-legend .lg{display:inline-flex;align-items:center;gap:.35rem}
+.month-legend .sw{display:inline-block;width:.85rem;height:.85rem;border-radius:3px;
+  border:1px solid var(--border);background:var(--bg)}
+.month-legend .sw.on{background:var(--moss);border-color:var(--moss)}
+.month-legend .sw.peak{background:var(--amber);border-color:var(--amber)}
+.month-legend .sw.now{box-shadow:0 0 0 2px var(--bracken)}
+
+.peak-note{font-style:italic;color:var(--ink-soft);margin:0 0 .9rem;
+  font-family:"Fraunces",serif;font-size:.96rem}
+.schedule-note{padding:.7rem .9rem;border-radius:8px;background:#fdf3eb;
+  border:1px solid #e6c8aa;color:#8b3f17;font-size:.86rem;margin:0 0 .9rem}
+
+.condition-list{list-style:none;margin:.4rem 0 0;padding:0;display:flex;flex-direction:column;gap:.55rem}
+.condition-list .cond{display:flex;gap:.7rem;padding:.65rem .85rem;border-radius:10px;
+  background:var(--paper);border:1px solid var(--border)}
+.condition-list .cond-warn{background:#fdf3eb;border-color:#e6c8aa}
+.condition-list .cond-icon{font-size:1.15rem;flex-shrink:0;line-height:1.3}
+.condition-list .cond-body{display:flex;flex-direction:column;gap:.18rem}
+.condition-list .cond-label{font-weight:700;font-size:.86rem;color:var(--ink)}
+.condition-list .cond-warn .cond-label{color:#8b3f17}
+.condition-list .cond-desc{font-size:.83rem;color:var(--ink-soft);line-height:1.5}
+
+.cond-narrative{font-size:.88rem;color:var(--muted);margin:1rem 0 0;padding-top:.85rem;
+  border-top:1px dashed var(--border);line-height:1.55}
+.cond-narrative strong{color:var(--ink-soft);font-weight:600}
+
+/* Card-level flags */
+.card-flag-row{display:flex;flex-wrap:wrap;gap:.3rem;margin:.45rem 0 0;align-items:center}
+.card-flag{font-size:.62rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  padding:.2rem .55rem;border-radius:6px;background:var(--paper);color:var(--ink-soft);
+  border:1px solid var(--border);font-family:"Inter",sans-serif;line-height:1.4}
+.card-flag.flag-warn{background:#fdf3eb;color:#8b3f17;border-color:#e6c8aa}
+.now-badge{display:inline-block;font-size:.6rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;padding:.22rem .58rem;border-radius:999px;
+  background:var(--moss);color:var(--cream);font-family:"Inter",sans-serif}
+
 .empty{padding:3rem 1rem;text-align:center;background:var(--card);
   border-radius:14px;border:1px dashed var(--border);color:var(--muted);
   grid-column:1/-1}
@@ -1400,6 +1593,7 @@ footer.site{background:var(--slate);color:var(--cream);padding:3.5rem 0 2rem;mar
               <label><input type="checkbox" id="offlead"> Off-lead possible</label>
               <label><input type="checkbox" id="pushchair"> Pushchair friendly</label>
               <label><input type="checkbox" id="family"> Family friendly (Easy)</label>
+              <label><input type="checkbox" id="in-season"> Best for <span id="in-season-month">this month</span> ✦</label>
             </div>
           </div>
           <div class="f-group">
@@ -1465,6 +1659,10 @@ const DIFFICULTIES = __DIFFS_JSON__;
 const TAGS = __TAGS_JSON__;
 const REGION_ACCENT = __REGION_ACCENT_JSON__;
 const REGION_SHORT  = __REGION_SHORT_JSON__;
+const CONDITION_META = __CONDITION_META_JSON__;
+const CURRENT_MONTH = new Date().getMonth() + 1;  // 1..12, recomputed on every page load
+const MONTH_NAMES = ["January","February","March","April","May","June",
+                     "July","August","September","October","November","December"];
 
 const $ = q => document.querySelector(q);
 const $$ = q => document.querySelectorAll(q);
@@ -1482,7 +1680,7 @@ function captureListingState(){
       regionShorts: [...$$('.chip.on[data-chip-kind="region-short"]')].map(c => c.dataset.v),
       difficulties: [...$$('.chip.on[data-chip-kind="difficulty"]')].map(c => c.dataset.v),
       pois: [...$$('#poi-list input:checked')].map(c => c.dataset.tag),
-      flags: ["dogs-yes","offlead","pushchair","family"]
+      flags: ["dogs-yes","offlead","pushchair","family","in-season"]
         .filter(id => $("#"+id).checked),
       driveMax: $("#drive-max").value,
       distMax:  $("#dist-max").value,
@@ -1514,7 +1712,7 @@ function restoreListingState(){
   $$('#poi-list input').forEach(c =>
     c.checked = (state.pois || []).includes(c.dataset.tag)
   );
-  ["dogs-yes","offlead","pushchair","family"].forEach(id =>
+  ["dogs-yes","offlead","pushchair","family","in-season"].forEach(id =>
     $("#"+id).checked = (state.flags || []).includes(id)
   );
   if (state.driveMax) $("#drive-max").value = state.driveMax;
@@ -1590,7 +1788,15 @@ bindRange("drive-max", "drive-val", n => n + " min");
 bindRange("dist-max", "dist-val", n => n + " mi");
 bindRange("elev-max", "elev-val", n => n + " m");
 
-["dogs-yes","offlead","pushchair","family"].forEach(id =>
+// Populate the dynamic month name in the "Best for [Month] ✦" filter label.
+// Done in JS so the same built page is correct year-round, not stale on
+// the 1st of next month.
+{
+  const lbl = $("#in-season-month");
+  if (lbl) lbl.textContent = MONTH_NAMES[CURRENT_MONTH - 1];
+}
+
+["dogs-yes","offlead","pushchair","family","in-season"].forEach(id =>
   $("#"+id).addEventListener("change", apply)
 );
 $("#sort").addEventListener("change", apply);
@@ -1671,7 +1877,7 @@ function reset(){
   $$(".chip.on").forEach(c => c.classList.remove("on"));
   $$(".wales-zone-group.on").forEach(g => g.classList.remove("on"));
   $$('#poi-list input:checked').forEach(c => c.checked = false);
-  ["dogs-yes","offlead","pushchair","family"].forEach(id => $("#"+id).checked = false);
+  ["dogs-yes","offlead","pushchair","family","in-season"].forEach(id => $("#"+id).checked = false);
   $("#drive-max").value = $("#drive-max").max;
   $("#dist-max").value = $("#dist-max").max;
   $("#elev-max").value = $("#elev-max").max;
@@ -1703,6 +1909,7 @@ function apply(){
   const needOff  = $("#offlead").checked;
   const needPush = $("#pushchair").checked;
   const needFam  = $("#family").checked;
+  const needNow  = $("#in-season").checked;
   const sort     = $("#sort").value;
 
   let out = WALKS.filter(w => {
@@ -1731,6 +1938,7 @@ function apply(){
       if (!(p === "yes" || p.startsWith("partial") || p.includes("yes"))) return false;
     }
     if (needFam && !(String(w.difficulty).toLowerCase().startsWith("easy"))) return false;
+    if (needNow && !isInSeasonNow(w)) return false;
     return true;
   });
 
@@ -1746,12 +1954,38 @@ function apply(){
   render(out);
 }
 
+// True when the walk is in season for the current calendar month. Empty
+// best_months means schedule-dependent (MoD ranges) — we don't surface those
+// as "Good now" because access is genuinely unknown without checking.
+function isInSeasonNow(w){
+  return Array.isArray(w.best_months) && w.best_months.includes(CURRENT_MONTH);
+}
+
+// Render the high-impact flag pills for a card. Lower-severity flags
+// (lambing, cattle, stiles, etc.) only show on the walk page — cluttering
+// every card with 3-4 pills hurts scannability.
+function cardFlagPills(w){
+  const flags = w.condition_flags || [];
+  const pills = [];
+  for (const k of flags){
+    const meta = CONDITION_META[k];
+    if (!meta || !meta.card_label) continue;  // skip non-card flags
+    const cls = "card-flag" + (meta.severity === "warn" ? " flag-warn" : "");
+    pills.push(`<span class="${cls}" title="${esc(meta.label)}">${meta.icon} ${esc(meta.card_label)}</span>`);
+  }
+  if (isInSeasonNow(w)){
+    pills.push(`<span class="now-badge" title="In season for ${MONTH_NAMES[CURRENT_MONTH-1]}">Good now ✦</span>`);
+  }
+  return pills.length ? `<div class="card-flag-row">${pills.join("")}</div>` : "";
+}
+
 function walkCard(w){
   const diffClass = "diff-" + (w.difficulty || "").replace(/\s/g,".");
   const tagsHtml = (w.tags || []).slice(0,5).map(t => `<span class="tag">${esc(t)}</span>`).join("");
   const accent = accentFor(w.region);
   const short  = shortFor(w.region);
   const walkUrl = `walks/${encodeURIComponent(w.slug)}.html`;
+  const flagsHtml = cardFlagPills(w);
   return `
     <article class="card" style="--accent:${accent}">
       <div class="card-accent"></div>
@@ -1769,6 +2003,7 @@ function walkCard(w){
         </div>
         <p class="feat-line">${esc(w.features || "")}</p>
         <div class="tag-row">${tagsHtml}</div>
+        ${flagsHtml}
         <div class="card-btns">
           <a class="btn btn-primary" href="${mapsUrl(w)}" target="_blank" rel="noopener noreferrer">Directions ↗</a>
           <a class="btn btn-secondary" href="${walkUrl}" data-walk-link="${esc(w.slug)}">View walk →</a>
@@ -1783,7 +2018,7 @@ function hasActiveFilter(){
   if (q) return true;
   if (document.querySelector(".chip.on")) return true;
   if (document.querySelector("#poi-list input:checked")) return true;
-  if (["dogs-yes","offlead","pushchair","family"].some(id => $("#"+id).checked)) return true;
+  if (["dogs-yes","offlead","pushchair","family","in-season"].some(id => $("#"+id).checked)) return true;
   const atMax = id => Number($("#"+id).value) >= Number($("#"+id).max);
   if (!atMax("drive-max") || !atMax("dist-max") || !atMax("elev-max")) return true;
   return false;
@@ -1889,6 +2124,7 @@ HTML = (HTML
     .replace("__TAGS_JSON__", json.dumps(all_tags, ensure_ascii=False))
     .replace("__REGION_ACCENT_JSON__", json.dumps(region_accent_js, ensure_ascii=False))
     .replace("__REGION_SHORT_JSON__", json.dumps(region_short_js, ensure_ascii=False))
+    .replace("__CONDITION_META_JSON__", json.dumps(CONDITION_META, ensure_ascii=False))
     .replace("__INJECT_SUPABASE_URL__", SUPABASE_URL)
     .replace("__INJECT_SUPABASE_ANON_KEY__", SUPABASE_ANON_KEY)
 )
@@ -1924,8 +2160,13 @@ WALKS_DIR = HERE / "walks"
 WALKS_DIR.mkdir(exist_ok=True)
 
 # Wipe stale pages so renamed walks don't leave orphan URLs behind.
+# Tolerant of permission errors so a sandboxed dev rebuild still proceeds —
+# we'll just overwrite each file rather than skipping the build entirely.
 for stale in WALKS_DIR.glob("*.html"):
-    stale.unlink()
+    try:
+        stale.unlink()
+    except (PermissionError, OSError):
+        pass
 
 # Detail-list ordering. Each tuple is (label, dict-key, optional formatter).
 # Empty/missing values are dropped at render-time so pages stay tidy when
@@ -2083,6 +2324,76 @@ def walk_page_html(walk):
       <div class="walk-ratings" data-ratings-for="{esc(walk["id"])}"></div>
     </section>'''
 
+    # --- Conditions & seasonality section (task #36) ---
+    best_months = walk.get("best_months") or []
+    flag_keys   = walk.get("condition_flags") or []
+    peak_note   = walk.get("peak_note")
+
+    # 12-month bar — current month is highlighted in JS at view time, not here,
+    # so the rendered HTML doesn't go stale on the 1st of next month.
+    month_bar_html = "".join(
+        f'<span class="m{" on" if m in best_months else ""}" data-month="{m}" '
+        f'aria-label="{MONTH_NAMES[m-1]}: {"in season" if m in best_months else "out of season"}">'
+        f'{MONTH_LETTERS[m-1]}</span>'
+        for m in range(1, 13)
+    )
+
+    if not best_months:
+        # MoD/access-controlled walks have no fixed best months.
+        season_lead = (
+            '<div class="schedule-note"><strong>Schedule-dependent.</strong> '
+            'This walk is open only on specific access/non-firing days that '
+            'change week-to-week — check the relevant authority before setting out.</div>'
+        )
+    else:
+        season_lead = (
+            f'<div class="month-bar" role="img" aria-label="Best months">{month_bar_html}</div>'
+            '<div class="month-legend">'
+            '<span class="lg"><span class="sw on"></span>Best months</span>'
+            '<span class="lg"><span class="sw"></span>Out of season</span>'
+            '<span class="lg"><span class="sw now"></span>This month</span>'
+            '</div>'
+        )
+
+    peak_html = f'<p class="peak-note">{esc(peak_note)}</p>' if peak_note else ""
+
+    if flag_keys:
+        items = []
+        for k in flag_keys:
+            meta = CONDITION_META.get(k)
+            if not meta: continue
+            cls = "cond" + (" cond-warn" if meta["severity"] == "warn" else "")
+            items.append(
+                f'<li class="{cls}">'
+                f'<span class="cond-icon" aria-hidden="true">{meta["icon"]}</span>'
+                f'<div class="cond-body">'
+                f'<span class="cond-label">{esc(meta["label"])}</span>'
+                f'<span class="cond-desc">{esc(meta["desc"])}</span>'
+                f'</div></li>'
+            )
+        flags_html = '<ul class="condition-list">' + "".join(items) + '</ul>'
+    else:
+        flags_html = (
+            '<p class="cond-narrative" style="margin-top:0;padding-top:0;border-top:none;">'
+            'No specific conditions flagged for this walk — but always check the '
+            'forecast and parking situation before setting out.</p>'
+        )
+
+    # Keep the original hazards/notes prose at the bottom for narrative context.
+    narrative_html = (
+        f'<p class="cond-narrative"><strong>Walk owner notes:</strong> {esc(walk["notes"])}</p>'
+        if walk.get("notes") else ""
+    )
+
+    conditions_section = f'''
+    <section class="walk-section">
+      <h2>Conditions &amp; seasonality</h2>
+      {season_lead}
+      {peak_html}
+      {flags_html}
+      {narrative_html}
+    </section>'''
+
     # --- Compose the page ---
     desc_bits = [walk.get("features") or ""]
     if walk.get("town"): desc_bits.append(f"Near {walk['town']}.")
@@ -2148,15 +2459,12 @@ def walk_page_html(walk):
     {photos_section}
     {map_section}
     {details_section}
+    {conditions_section}
     {ratings_section}
 
     <section class="walk-section is-coming-soon">
       <h2>Trail notes <span class="badge">Coming soon</span></h2>
       <p>Step-by-step route description, mile-by-mile waypoints and a downloadable GPX track will appear here.</p>
-    </section>
-    <section class="walk-section is-coming-soon">
-      <h2>Conditions &amp; seasonality <span class="badge">Coming soon</span></h2>
-      <p>Real-time tide tables, MoD range-days, livestock alerts and seasonal closures will appear here so you can plan around them.</p>
     </section>
     <section class="walk-section is-coming-soon">
       <h2>Where to stay nearby <span class="badge">Coming soon</span></h2>
@@ -2209,6 +2517,14 @@ window.__SUPABASE_ANON_KEY__ = "{SUPABASE_ANON_KEY}";
 <script src="../ratings.js"></script>
 <script>
 if (window.ratings) window.ratings.init();
+
+// Highlight the current month on the seasonality bar. Done client-side so
+// the page stays correct without rebuilding on the 1st of every month.
+(function () {{
+  var m = new Date().getMonth() + 1;
+  var box = document.querySelector('.month-bar [data-month="' + m + '"]');
+  if (box) box.classList.add('now');
+}})();
 </script>
 
 </body>
