@@ -72,10 +72,13 @@ jobs:
         # build_gui.py. We only ship the *.html files from walks/ — the
         # walks/*.json source files are repo-internal (build inputs) and
         # don't need to be on the public site.
+        # editor.html + editor.js: auth-gated content management page.
         run: |
           mkdir -p _site/walks
           cp index.html _site/index.html
           cp ratings.js _site/ratings.js
+          cp editor.html _site/editor.html
+          cp editor.js _site/editor.js
           cp South_Wales_Walks_Database.xlsx _site/South_Wales_Walks_Database.xlsx
           cp walks/*.html _site/walks/
 
