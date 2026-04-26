@@ -60,10 +60,11 @@
   }
 
   async function fetchAggregates() {
-    // Public view — readable by anon role.
+    // SECURITY DEFINER function exposed via PostgREST RPC. Returns a row per
+    // rated walk with count + averages. Readable by both anon + authenticated
+    // (see `grant execute` in schema.sql).
     const { data, error } = await state.client
-      .from("walk_rating_aggregates")
-      .select("*");
+      .rpc("walk_rating_aggregates");
     if (error) { console.warn("[ratings] aggregates failed:", error); return; }
     state.aggregates.clear();
     for (const row of data || []) state.aggregates.set(row.walk_id, row);
@@ -116,10 +117,10 @@
     if (error) throw error;
     state.myRatings.set(walkId, data);
     // Optimistic: refetch just this walk's aggregate so the user sees their
-    // rating reflected immediately.
+    // rating reflected immediately. PostgREST lets us filter the result of
+    // a SETOF function with .eq() / .maybeSingle() exactly like a view.
     const { data: agg } = await state.client
-      .from("walk_rating_aggregates")
-      .select("*")
+      .rpc("walk_rating_aggregates")
       .eq("walk_id", walkId)
       .maybeSingle();
     if (agg) state.aggregates.set(walkId, agg);
