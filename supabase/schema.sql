@@ -61,30 +61,54 @@ create policy ratings_delete_own on public.ratings
   for delete using (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------------------
--- Public aggregate view — anyone (including anon) can read averages and
--- counts per walk, but never individual rows.
+-- Public aggregate function — anyone (anon + authenticated) can read
+-- per-walk averages and counts, but never individual rows.
 --
--- IMPORTANT: security_invoker=false (definer mode). The view must bypass the
--- ratings_select_own policy, otherwise anon visitors get zero rows and every
--- walk shows ☆☆☆☆☆ (0) even after people have rated. The view only exposes
--- aggregate columns (count + averages) — no comments, no user_ids — so this
--- doesn't leak PII. The grants below are what gates access.
+-- Why a SECURITY DEFINER function instead of a view?
+--   The view-based pattern needed `security_invoker = false` to bypass the
+--   ratings_select_own policy (otherwise anon visitors saw zero rows and
+--   every walk showed ☆☆☆☆☆ (0) forever). But Supabase's linter — correctly
+--   — flags definer-mode views as risky. A SECURITY DEFINER function is
+--   the modern Supabase pattern: same behaviour (runs as the function owner,
+--   bypassing RLS), but scoped to its explicit return columns so it can
+--   never leak comments/user_ids.
+--
+-- Drop the old view if it exists, so re-running this script after the
+-- view-based version is clean.
 -- ---------------------------------------------------------------------------
-create or replace view public.walk_rating_aggregates
-with (security_invoker = false) as
-select
-  walk_id,
-  count(*)::int                              as n,
-  round(avg(overall)::numeric,  2)           as avg_overall,
-  round(avg(scenery)::numeric,  2)           as avg_scenery,
-  round(avg(family)::numeric,   2)           as avg_family,
-  round(avg(dogs)::numeric,     2)           as avg_dogs,
-  round(avg(value)::numeric,    2)           as avg_value
-from public.ratings
-group by walk_id;
+drop view if exists public.walk_rating_aggregates;
 
--- Allow anon + authenticated to read the aggregate view.
-grant select on public.walk_rating_aggregates to anon, authenticated;
+create or replace function public.walk_rating_aggregates()
+returns table (
+  walk_id     integer,
+  n           integer,
+  avg_overall numeric,
+  avg_scenery numeric,
+  avg_family  numeric,
+  avg_dogs    numeric,
+  avg_value   numeric
+)
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  select
+    walk_id,
+    count(*)::int                  as n,
+    round(avg(overall)::numeric, 2) as avg_overall,
+    round(avg(scenery)::numeric, 2) as avg_scenery,
+    round(avg(family)::numeric,  2) as avg_family,
+    round(avg(dogs)::numeric,    2) as avg_dogs,
+    round(avg(value)::numeric,   2) as avg_value
+  from public.ratings
+  group by walk_id;
+$$;
+
+-- Lock down the default-PUBLIC execute grant, then re-grant to the two
+-- Supabase roles that should be able to call it.
+revoke all on function public.walk_rating_aggregates() from public;
+grant execute on function public.walk_rating_aggregates() to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Helpful index for "show me the latest comments on walk X" (future feature).
