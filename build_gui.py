@@ -2873,11 +2873,14 @@ def walk_page_html(walk):
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Inter:wght@400;500;600;700&display=swap">
-<!-- Leaflet (~40 KB) for the inline trail map. CDN, no API key. -->
+<!-- Leaflet (~40 KB) for the inline trail map. CDN, no API key.
+     NOT marked `defer` because the inline init script at the bottom of the
+     body needs `L` to be defined when it runs. With defer, the inline script
+     runs first and silently no-ops because `typeof L === 'undefined'`. -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
 {SHARED_CSS}
 </style>
