@@ -72,10 +72,12 @@ jobs:
         # build_gui.py. We only ship the *.html files from walks/ — the
         # walks/*.json source files are repo-internal (build inputs) and
         # don't need to be on the public site.
+        # walks/gpx/*.gpx ships so each walk page can fetch its own track
+        # via Leaflet for the inline trail polyline.
         # editor.html + editor.js: auth-gated content management page.
         # CNAME: tells GitHub Pages to serve the site under our custom domain.
         run: |
-          mkdir -p _site/walks
+          mkdir -p _site/walks/gpx
           cp index.html _site/index.html
           cp ratings.js _site/ratings.js
           cp editor.html _site/editor.html
@@ -83,6 +85,9 @@ jobs:
           cp CNAME _site/CNAME
           cp South_Wales_Walks_Database.xlsx _site/South_Wales_Walks_Database.xlsx
           cp walks/*.html _site/walks/
+          # GPX is optional — the cp may match nothing on a fresh repo
+          # before any walks have been uploaded with a track.
+          cp walks/gpx/*.gpx _site/walks/gpx/ 2>/dev/null || true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
