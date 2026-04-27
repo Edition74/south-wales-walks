@@ -1380,6 +1380,76 @@ details[open].filters>summary::after{transform:rotate(180deg)}
 .editor-meta{font-size:.78rem;color:var(--muted);margin:.2rem 0 1.2rem;text-align:center}
 .editor-meta strong{color:var(--ink-soft);font-weight:600}
 
+/* ─── Editor: walk-creation form ────────────────────────────── */
+/* Generic hidden util — used by editor-app and other panels that aren't .gate */
+.hidden{display:none!important}
+
+/* When the form is showing, the page needs more horizontal room than the
+   gate cards. Override the .editor-page max-width for the inner editor-app. */
+#editor-app{max-width:780px;margin:0 auto}
+.editor-header{margin-bottom:1.4rem}
+.editor-header h1{font-family:"Fraunces",serif;font-weight:500;font-size:1.7rem;
+  margin:0 0 .35rem;color:var(--ink);font-variation-settings:"opsz" 72}
+.editor-header .editor-meta{text-align:left;margin:0}
+
+.walk-form{display:flex;flex-direction:column;gap:1.1rem}
+.walk-form-section{background:var(--card);border:1px solid var(--border);border-radius:14px;
+  padding:1.3rem 1.5rem;margin:0;box-shadow:var(--shadow-sm)}
+.walk-form-section legend{font-family:"Fraunces",serif;font-weight:500;font-size:1.05rem;
+  color:var(--ink);padding:0 .55rem;margin-left:-.55rem}
+.ff{display:flex;flex-direction:column;gap:.35rem;margin:0 0 .9rem;text-align:left}
+.ff:last-child{margin-bottom:0}
+.ff-label{font-size:.78rem;font-weight:700;color:var(--ink-soft);letter-spacing:.04em}
+.ff-label em{color:#b45a2a;font-style:normal;margin-left:.15rem}
+.ff-hint{font-size:.74rem;color:var(--muted);line-height:1.45}
+.ff-hint code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.72rem;
+  background:var(--paper);padding:.05rem .3rem;border-radius:3px;border:1px solid var(--border-soft)}
+.ff input,.ff select,.ff textarea{
+  font:inherit;font-size:.92rem;padding:.55rem .75rem;border:1px solid var(--border);
+  border-radius:8px;background:#fff;color:var(--ink);font-family:"Inter",sans-serif;
+  width:100%;box-sizing:border-box;transition:border-color .15s,outline .15s}
+.ff textarea{resize:vertical;min-height:60px;font-size:.9rem;line-height:1.5}
+.ff input:focus,.ff select:focus,.ff textarea:focus{
+  outline:2px solid var(--bracken);outline-offset:1px;border-color:var(--bracken)}
+.ff input:invalid:not(:placeholder-shown),
+.ff select:invalid:not(:placeholder-shown){border-color:#c97b50}
+.ff-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:.7rem 1rem;margin-bottom:.9rem}
+.ff-row .ff{margin-bottom:0}
+
+#slug-preview{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--bracken);font-size:.72rem}
+
+/* GPX drag-drop area */
+.gpx-drop{border:2px dashed var(--border);border-radius:10px;padding:1.5rem 1.2rem;
+  text-align:center;background:var(--paper);transition:all .15s}
+.gpx-drop.is-dragover{border-color:var(--moss-2);background:#eef3e9}
+.gpx-drop.has-file{border-style:solid;border-color:var(--moss-2);background:#eef3e9}
+.gpx-drop-icon{font-size:1.6rem;margin-bottom:.3rem}
+.gpx-drop p{margin:.3rem 0;color:var(--ink-soft);font-size:.92rem}
+.gpx-drop button{background:transparent;border:0;color:var(--bracken);font:inherit;
+  font-size:.92rem;font-weight:600;text-decoration:underline;cursor:pointer;padding:0}
+.gpx-status{font-size:.85rem;padding:.6rem .85rem;border-radius:8px;margin-top:.7rem;line-height:1.5}
+.gpx-status.ok{background:#eef3e9;color:#3a5638;border:1px solid #b8c8a8}
+.gpx-status.err{background:#fdf3eb;color:#8b3f17;border:1px solid #e6c8aa}
+
+/* Save button row + post-publish status banner */
+.walk-form-actions{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.4rem 0 0}
+.walk-form-save{font:inherit;font-size:.95rem;font-weight:600;padding:.75rem 1.6rem;
+  background:var(--moss);color:var(--cream);border:0;border-radius:8px;cursor:pointer;
+  font-family:"Inter",sans-serif;transition:background .15s}
+.walk-form-save:hover{background:#3a5638}
+.walk-form-save:disabled{background:var(--muted);cursor:wait;opacity:.7}
+
+.publish-status{padding:1rem 1.2rem;border-radius:10px;font-size:.92rem;line-height:1.55;
+  margin-top:.4rem}
+.publish-status.working{background:var(--paper);color:var(--ink-soft);border:1px solid var(--border)}
+.publish-status.ok{background:#eef3e9;color:#2e4a30;border:1px solid #b8c8a8}
+.publish-status.err{background:#fdf3eb;color:#8b3f17;border:1px solid #e6c8aa}
+.publish-status a{color:inherit;font-weight:700;text-decoration:underline}
+
+.editor-footer{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1.6rem;
+  padding-top:1rem;border-top:1px solid var(--border);flex-wrap:wrap}
+
 .empty{padding:3rem 1rem;text-align:center;background:var(--card);
   border-radius:14px;border:1px dashed var(--border);color:var(--muted);
   grid-column:1/-1}
@@ -2698,14 +2768,210 @@ EDITOR_HTML = f"""<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- App: signed in + editor + PAT. Today's session: confirmation message
-         only. Next session: the actual walk-creation form lands here. -->
-    <div id="editor-app" class="gate hidden">
-      <div class="gate-icon">✓</div>
-      <h1>Welcome, <span id="editor-name">editor</span></h1>
-      <p>You're signed in and your GitHub token is saved. <strong>The walk-creation form lands in the next build.</strong> When it does, this page becomes the place to draft new walks, upload GPX files, and publish straight to the repo.</p>
-      <p class="editor-meta">Signed in as <strong id="app-email">…</strong></p>
-      <div class="gate-actions">
+    <!-- App: signed in + editor + PAT. The walk-creation form. -->
+    <div id="editor-app" class="hidden">
+      <div class="editor-header">
+        <h1>New walk</h1>
+        <p class="editor-meta">Signed in as <strong id="app-email">…</strong> · ID will be <strong id="app-next-id">…</strong></p>
+      </div>
+
+      <form id="walk-form" class="walk-form" autocomplete="off">
+
+        <!-- Section 1: the basics -->
+        <fieldset class="walk-form-section">
+          <legend>The walk</legend>
+
+          <label class="ff"><span class="ff-label">Name <em>*</em></span>
+            <input type="text" name="name" required minlength="3" placeholder="Pen y Fan Circular (Motorway Route)">
+            <span class="ff-hint">URL slug will be: <code id="slug-preview">—</code></span>
+          </label>
+
+          <label class="ff"><span class="ff-label">Region <em>*</em></span>
+            <select name="region" required>
+              <option value="">— pick one —</option>
+              <option>Brecon Beacons / Bannau Brycheiniog</option>
+              <option>Gower &amp; Swansea Bay</option>
+              <option>Pembrokeshire (South)</option>
+              <option>Valleys &amp; Vale of Glamorgan</option>
+              <option>Wye Valley &amp; Monmouthshire</option>
+              <option>Mid Wales (Powys &amp; Ceredigion)</option>
+              <option>Carmarthenshire &amp; West Wales</option>
+              <option>English Borders (Forest of Dean &amp; Herefordshire)</option>
+            </select>
+          </label>
+
+          <div class="ff-row">
+            <label class="ff"><span class="ff-label">Sub-area</span>
+              <input type="text" name="sub_area" placeholder="Central Beacons">
+            </label>
+            <label class="ff"><span class="ff-label">Nearest town</span>
+              <input type="text" name="nearest_town" placeholder="Libanus">
+            </label>
+          </div>
+
+          <label class="ff"><span class="ff-label">Start postcode <em>*</em></span>
+            <input type="text" name="start_postcode" required pattern="[A-Za-z]{{1,2}}[0-9][A-Za-z0-9]? ?[0-9][A-Za-z]{{2}}"
+              placeholder="LD3 8NL" autocapitalize="characters" style="text-transform:uppercase">
+            <span class="ff-hint">UK format. Auto-uppercased on save.</span>
+          </label>
+        </fieldset>
+
+        <!-- Section 2: numbers -->
+        <fieldset class="walk-form-section">
+          <legend>The numbers</legend>
+
+          <div class="ff-row">
+            <label class="ff"><span class="ff-label">Distance (miles) <em>*</em></span>
+              <input type="number" name="distance_mi" required min="0.1" max="100" step="0.1" placeholder="4.5">
+            </label>
+            <label class="ff"><span class="ff-label">Elevation gain (m)</span>
+              <input type="number" name="elevation_gain_m" min="0" max="3000" step="10" placeholder="460">
+            </label>
+            <label class="ff"><span class="ff-label">Time (hours)</span>
+              <input type="number" name="est_time_hrs" min="0.25" max="24" step="0.25" placeholder="2.5">
+            </label>
+          </div>
+
+          <div class="ff-row">
+            <label class="ff"><span class="ff-label">Difficulty <em>*</em></span>
+              <select name="difficulty" required>
+                <option value="">— pick —</option>
+                <option>Easy</option>
+                <option>Easy/Moderate</option>
+                <option>Moderate</option>
+                <option>Moderate/Hard</option>
+                <option>Hard</option>
+                <option>Strenuous</option>
+              </select>
+            </label>
+            <label class="ff"><span class="ff-label">Route type <em>*</em></span>
+              <input type="text" name="route_type" required pattern="^(Loop|Linear|Out-and-back|Figure of 8)(\s*\(.+\))?$"
+                placeholder="Loop">
+              <span class="ff-hint">Loop, Linear, Out-and-back, or Figure of 8. Optional <code>(parenthetical)</code>.</span>
+            </label>
+            <label class="ff"><span class="ff-label">Drive from Monmouth (mins)</span>
+              <input type="number" name="drive_from_monmouth_mins" min="0" max="600" step="5" placeholder="55">
+            </label>
+          </div>
+        </fieldset>
+
+        <!-- Section 3: what you'll see -->
+        <fieldset class="walk-form-section">
+          <legend>What you'll see</legend>
+
+          <label class="ff"><span class="ff-label">Highlights <em>*</em></span>
+            <textarea name="highlights" required minlength="5" rows="2"
+              placeholder="Highest peak in South Wales (886m); iconic twin summit of Pen y Fan &amp; Corn Du."></textarea>
+            <span class="ff-hint">The headline blurb shown on cards and the page hero.</span>
+          </label>
+
+          <label class="ff"><span class="ff-label">Points of interest</span>
+            <textarea name="points_of_interest" rows="2"
+              placeholder="Tommy Jones obelisk, Bronze Age cairns on summit"></textarea>
+          </label>
+
+          <label class="ff"><span class="ff-label">Viewpoints &amp; beauty spots</span>
+            <textarea name="viewpoints" rows="2"
+              placeholder="Summit panorama: Black Mountains, Bristol Channel, Carmarthen Fans on clear days"></textarea>
+          </label>
+
+          <label class="ff"><span class="ff-label">Water features</span>
+            <input type="text" name="water_features" placeholder="Taf Fechan streams at start">
+          </label>
+
+          <label class="ff"><span class="ff-label">Picnic spots</span>
+            <input type="text" name="picnic_spots" placeholder="Corn Du saddle (Bwlch Duwynt); grassy flat below Corn Du">
+          </label>
+        </fieldset>
+
+        <!-- Section 4: practical -->
+        <fieldset class="walk-form-section">
+          <legend>Practical</legend>
+
+          <label class="ff"><span class="ff-label">Terrain</span>
+            <input type="text" name="terrain" placeholder="Stone pitched path, grass ridge, steep climb">
+          </label>
+
+          <label class="ff"><span class="ff-label">Parking &amp; start <em>*</em></span>
+            <input type="text" name="parking_start" required minlength="3"
+              placeholder="Pont ar Daf pay &amp; display car park (off A470)">
+          </label>
+
+          <label class="ff"><span class="ff-label">Food &amp; drink nearby</span>
+            <input type="text" name="food_drink_nearby"
+              placeholder="The Tai'r Bull Inn, Libanus; Felin Fach Griffin further afield">
+          </label>
+
+          <div class="ff-row">
+            <label class="ff"><span class="ff-label">Toilets</span>
+              <input type="text" name="toilets" placeholder="None on route (nearest: Storey Arms)">
+            </label>
+            <label class="ff"><span class="ff-label">Public transport</span>
+              <input type="text" name="public_transport" placeholder="T4 bus Cardiff–Brecon stops at Storey Arms">
+            </label>
+          </div>
+        </fieldset>
+
+        <!-- Section 5: walkers & seasonality -->
+        <fieldset class="walk-form-section">
+          <legend>Walkers &amp; seasonality</legend>
+
+          <div class="ff-row">
+            <label class="ff"><span class="ff-label">Dogs allowed</span>
+              <input type="text" name="dogs_allowed" pattern="^(Yes|No|Partial)([\s(].+)?$"
+                placeholder="Yes">
+              <span class="ff-hint">Start with <code>Yes</code>, <code>No</code>, or <code>Partial</code>.</span>
+            </label>
+            <label class="ff"><span class="ff-label">Dog lead policy</span>
+              <input type="text" name="dog_lead_policy" placeholder="On lead (sheep, cliff edges)">
+            </label>
+          </div>
+
+          <div class="ff-row">
+            <label class="ff"><span class="ff-label">Pushchair friendly</span>
+              <input type="text" name="pushchair_friendly" pattern="^(Yes|No|Partial)(\s*\(.+\))?$"
+                placeholder="No">
+            </label>
+            <label class="ff"><span class="ff-label">Waymarked</span>
+              <input type="text" name="waymarked" pattern="^(Yes|No|Partial)(\s*\(.+\))?$"
+                placeholder="Partial">
+              <span class="ff-hint">e.g. <code>Yes (Wales Coast Path)</code>.</span>
+            </label>
+          </div>
+
+          <label class="ff"><span class="ff-label">Best season</span>
+            <input type="text" name="best_season" placeholder="All year (winter needs kit)">
+          </label>
+
+          <label class="ff"><span class="ff-label">Hazards &amp; notes</span>
+            <textarea name="hazards_notes" rows="2"
+              placeholder="Exposed to weather; path heavily eroded; busy at weekends"></textarea>
+            <span class="ff-hint">Used by the auto-derived condition flags (tide, MoD, lambing, exposed-summit, etc.) — be specific.</span>
+          </label>
+        </fieldset>
+
+        <!-- Section 6: GPX file -->
+        <fieldset class="walk-form-section">
+          <legend>Trail file (GPX)</legend>
+          <div id="gpx-drop" class="gpx-drop">
+            <div class="gpx-drop-icon">📍</div>
+            <p><strong>Drop a GPX file here</strong> or <button type="button" id="gpx-pick">pick a file</button>.</p>
+            <input type="file" id="gpx-file" accept=".gpx,application/gpx+xml" hidden>
+            <p class="ff-hint">Optional. The trail polyline will be drawn on the walk's map page (rendering coming next session).</p>
+          </div>
+          <div id="gpx-status" class="gpx-status hidden"></div>
+        </fieldset>
+
+        <!-- Save -->
+        <div class="walk-form-actions">
+          <button type="submit" class="walk-form-save">Save &amp; publish</button>
+          <button type="button" id="form-clear" class="gate-action-secondary">Clear form</button>
+        </div>
+
+        <div id="publish-status" class="publish-status hidden"></div>
+      </form>
+
+      <div class="editor-footer">
         <button id="app-reset-pat" class="gate-action-secondary" type="button">Forget GitHub token</button>
         <button id="app-signout" class="gate-action-secondary" type="button">Sign out</button>
       </div>

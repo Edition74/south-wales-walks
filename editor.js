@@ -24,8 +24,14 @@
 
   // Where the GitHub PAT is cached. Browser-local only.
   const PAT_KEY = "swwGhPat";
+  // Form-state cache so a refresh / accidental tab close doesn't lose work.
+  const DRAFT_KEY = "swwWalkDraft";
 
   const GATES = ["loading", "signin", "checking", "denied", "pat", "app"];
+
+  const REPO_OWNER = "Edition74";
+  const REPO_NAME  = "south-wales-walks";
+  const REPO_BRANCH = "main";
 
   const state = {
     client:   null,
@@ -33,6 +39,9 @@
     isEditor: false,
     pat:      null,
     editor:   null,    // row from public.editors when present
+    nextId:   null,    // computed once we have a PAT and can hit the API
+    gpx:      null,    // { name, size, text } when a valid GPX is loaded
+    publishing: false,
   };
 
   // ----- helpers -----
@@ -187,6 +196,410 @@
       route();
     });
   }
+
+  // ----- form: helpers -----
+
+  function makeSlug(name) {
+    return String(name || "").toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 80) || "walk";
+  }
+
+  function pad3(n) { return String(n).padStart(3, "0"); }
+
+  // Fetch the current walks/ folder listing via the GitHub API and return
+  // the next free numeric ID. Defends against gaps (deleted walks) by
+  // always taking max(id) + 1 rather than count + 1.
+  async function fetchNextId() {
+    const r = await fetch(
+      `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/walks?ref=${REPO_BRANCH}`,
+      { headers: ghHeaders() }
+    );
+    if (!r.ok) throw new Error(`GitHub list failed: ${r.status}`);
+    const files = await r.json();
+    const ids = files
+      .filter(f => f.name && /^\d{3}-.+\.json$/.test(f.name))
+      .map(f => parseInt(f.name.slice(0, 3), 10))
+      .filter(n => !isNaN(n));
+    return (ids.length ? Math.max(...ids) : 0) + 1;
+  }
+
+  function ghHeaders() {
+    return {
+      Authorization: "Bearer " + state.pat,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    };
+  }
+
+  // Browser-safe utf-8 → base64. The GitHub blobs API takes either utf-8
+  // text or base64; base64 sidesteps any encoding ambiguity for GPX/Welsh
+  // characters.
+  function utf8ToBase64(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+
+  // ----- form: GPX upload + validation -----
+
+  function setGpxStatus(text, kind) {
+    const el = byId("gpx-status");
+    if (!el) return;
+    if (!text) { el.classList.add("hidden"); el.textContent = ""; return; }
+    el.classList.remove("hidden");
+    el.className = "gpx-status " + (kind || "");
+    el.textContent = text;
+  }
+
+  async function handleGpxFile(file) {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setGpxStatus("File too large (>5 MB) — try simplifying the track first.", "err");
+      return;
+    }
+    let text;
+    try { text = await file.text(); }
+    catch { setGpxStatus("Couldn't read the file.", "err"); return; }
+    // Light validation: parse XML and check for a track or route.
+    const doc = new DOMParser().parseFromString(text, "application/xml");
+    if (doc.querySelector("parsererror")) {
+      setGpxStatus("Not valid XML — is this really a GPX file?", "err");
+      return;
+    }
+    const root = doc.documentElement;
+    if (!root || root.localName !== "gpx") {
+      setGpxStatus("XML root isn't <gpx>. This doesn't look like a GPX file.", "err");
+      return;
+    }
+    const segs = doc.querySelectorAll("trkseg, rte").length;
+    const pts  = doc.querySelectorAll("trkpt, rtept").length;
+    if (!pts) {
+      setGpxStatus("GPX has no track or route points (<trkpt> / <rtept>).", "err");
+      return;
+    }
+    state.gpx = { name: file.name, size: file.size, text };
+    byId("gpx-drop")?.classList.add("has-file");
+    const kb = (file.size / 1024).toFixed(1);
+    setGpxStatus(`✓ ${file.name} (${kb} KB) · ${pts} points across ${segs} segment${segs === 1 ? "" : "s"}`, "ok");
+  }
+
+  function bindGpx() {
+    const drop = byId("gpx-drop");
+    const file = byId("gpx-file");
+    const pick = byId("gpx-pick");
+    if (!drop || !file) return;
+
+    pick?.addEventListener("click", () => file.click());
+    file.addEventListener("change", (e) => handleGpxFile(e.target.files[0]));
+
+    drop.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      drop.classList.add("is-dragover");
+    });
+    drop.addEventListener("dragleave", () => drop.classList.remove("is-dragover"));
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.classList.remove("is-dragover");
+      const f = e.dataTransfer.files[0];
+      if (f) handleGpxFile(f);
+    });
+  }
+
+  // ----- form: live slug preview + draft persistence -----
+
+  function bindForm() {
+    const form = byId("walk-form");
+    if (!form) return;
+
+    // Live slug preview
+    const nameEl = form.querySelector('[name="name"]');
+    const slugEl = byId("slug-preview");
+    nameEl?.addEventListener("input", () => {
+      if (slugEl) slugEl.textContent = makeSlug(nameEl.value) || "—";
+      saveDraft();
+    });
+
+    // Persist draft on every input
+    form.addEventListener("input", saveDraft);
+
+    // Postcode: live-uppercase
+    const pc = form.querySelector('[name="start_postcode"]');
+    pc?.addEventListener("input", () => {
+      const start = pc.selectionStart;
+      pc.value = pc.value.toUpperCase();
+      pc.setSelectionRange?.(start, start);
+    });
+
+    // Clear button
+    byId("form-clear")?.addEventListener("click", () => {
+      if (!confirm("Clear all form fields and the saved draft?")) return;
+      form.reset();
+      state.gpx = null;
+      byId("gpx-drop")?.classList.remove("has-file");
+      setGpxStatus("", "");
+      try { localStorage.removeItem(DRAFT_KEY); } catch {}
+      if (slugEl) slugEl.textContent = "—";
+      setPublishStatus("", "");
+    });
+
+    // Save & publish
+    form.addEventListener("submit", (e) => { e.preventDefault(); publishWalk(); });
+
+    // Restore draft if one exists
+    restoreDraft();
+  }
+
+  function readForm() {
+    const form = byId("walk-form");
+    if (!form) return null;
+    const fd = new FormData(form);
+    const out = {};
+    for (const [k, v] of fd.entries()) {
+      out[k] = typeof v === "string" ? v.trim() : v;
+    }
+    return out;
+  }
+
+  function saveDraft() {
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(readForm() || {})); } catch {}
+  }
+
+  function restoreDraft() {
+    let raw;
+    try { raw = localStorage.getItem(DRAFT_KEY); } catch { return; }
+    if (!raw) return;
+    let data;
+    try { data = JSON.parse(raw); } catch { return; }
+    const form = byId("walk-form");
+    if (!form || !data) return;
+    for (const [k, v] of Object.entries(data)) {
+      const el = form.elements[k];
+      if (el && v) el.value = v;
+    }
+    const slugEl = byId("slug-preview");
+    if (slugEl && data.name) slugEl.textContent = makeSlug(data.name);
+  }
+
+  // ----- form: build the walk JSON, validating against schema constraints -----
+
+  function buildWalkRecord(formData, id) {
+    // Map form fields to canonical schema. Empty optional fields become
+    // null (matches the "string|null" pattern in walk.schema.json) rather
+    // than empty strings, so the schema validator passes them.
+    const optStr = (v) => (v && String(v).trim()) ? String(v).trim() : null;
+    const optNum = (v) => {
+      if (v === "" || v === null || v === undefined) return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    const optInt = (v) => {
+      const n = optNum(v);
+      return n === null ? null : Math.round(n);
+    };
+    const slug = makeSlug(formData.name);
+
+    return {
+      id,
+      slug,
+      name: String(formData.name).trim(),
+      region: String(formData.region).trim(),
+      sub_area: optStr(formData.sub_area),
+      nearest_town: optStr(formData.nearest_town),
+      distance_mi: Number(formData.distance_mi),
+      elevation_gain_m: optInt(formData.elevation_gain_m),
+      est_time_hrs: optNum(formData.est_time_hrs),
+      difficulty: String(formData.difficulty).trim(),
+      route_type: String(formData.route_type).trim(),
+      terrain: optStr(formData.terrain),
+      dogs_allowed: optStr(formData.dogs_allowed) || "Yes",
+      dog_lead_policy: optStr(formData.dog_lead_policy),
+      pushchair_friendly: optStr(formData.pushchair_friendly) || "No",
+      waymarked: optStr(formData.waymarked) || "No",
+      best_season: optStr(formData.best_season),
+      highlights: String(formData.highlights).trim(),
+      points_of_interest: optStr(formData.points_of_interest),
+      viewpoints: optStr(formData.viewpoints),
+      water_features: optStr(formData.water_features),
+      picnic_spots: optStr(formData.picnic_spots),
+      parking_start: String(formData.parking_start).trim(),
+      food_drink_nearby: optStr(formData.food_drink_nearby),
+      toilets: optStr(formData.toilets),
+      public_transport: optStr(formData.public_transport),
+      hazards_notes: optStr(formData.hazards_notes),
+      start_postcode: String(formData.start_postcode).trim().toUpperCase(),
+      drive_from_monmouth_mins: optInt(formData.drive_from_monmouth_mins),
+    };
+  }
+
+  // ----- form: GitHub commit (atomic tree+commit, JSON + optional GPX) -----
+
+  function setPublishStatus(html, kind) {
+    const el = byId("publish-status");
+    if (!el) return;
+    if (!html) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+    el.classList.remove("hidden");
+    el.className = "publish-status " + (kind || "");
+    el.innerHTML = html;
+  }
+
+  async function ghCommit({ files, message }) {
+    const base = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/git`;
+    const headers = { ...ghHeaders(), "Content-Type": "application/json" };
+
+    // 1. Current branch ref
+    const refR = await fetch(`${base}/refs/heads/${REPO_BRANCH}`, { headers });
+    if (!refR.ok) throw new Error(`Couldn't get branch ref (${refR.status})`);
+    const ref = await refR.json();
+    const baseSha = ref.object.sha;
+
+    // 2. Base commit (for tree SHA)
+    const cR = await fetch(`${base}/commits/${baseSha}`, { headers });
+    if (!cR.ok) throw new Error(`Couldn't get base commit (${cR.status})`);
+    const baseCommit = await cR.json();
+    const baseTreeSha = baseCommit.tree.sha;
+
+    // 3. Create blobs (one per file)
+    const treeEntries = [];
+    for (const f of files) {
+      const bR = await fetch(`${base}/blobs`, {
+        method: "POST", headers,
+        body: JSON.stringify({ content: utf8ToBase64(f.content), encoding: "base64" }),
+      });
+      if (!bR.ok) throw new Error(`Couldn't create blob for ${f.path} (${bR.status})`);
+      const blob = await bR.json();
+      treeEntries.push({ path: f.path, mode: "100644", type: "blob", sha: blob.sha });
+    }
+
+    // 4. New tree
+    const tR = await fetch(`${base}/trees`, {
+      method: "POST", headers,
+      body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries }),
+    });
+    if (!tR.ok) throw new Error(`Couldn't create tree (${tR.status})`);
+    const tree = await tR.json();
+
+    // 5. New commit
+    const ncR = await fetch(`${base}/commits`, {
+      method: "POST", headers,
+      body: JSON.stringify({ message, tree: tree.sha, parents: [baseSha] }),
+    });
+    if (!ncR.ok) throw new Error(`Couldn't create commit (${ncR.status})`);
+    const newCommit = await ncR.json();
+
+    // 6. Fast-forward branch
+    const upR = await fetch(`${base}/refs/heads/${REPO_BRANCH}`, {
+      method: "PATCH", headers,
+      body: JSON.stringify({ sha: newCommit.sha }),
+    });
+    if (!upR.ok) {
+      const e = await upR.json().catch(() => ({}));
+      throw new Error(`Couldn't update branch — likely a race with another commit. ${e.message || ""}`);
+    }
+    return newCommit.sha;
+  }
+
+  async function publishWalk() {
+    if (state.publishing) return;
+    const form = byId("walk-form");
+    if (!form?.reportValidity()) return;
+
+    const formData = readForm();
+    state.publishing = true;
+    const saveBtn = form.querySelector(".walk-form-save");
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Publishing…"; }
+    setPublishStatus("Working out the next walk ID…", "working");
+
+    try {
+      // Always re-fetch the next ID at submit time so two editors saving
+      // simultaneously don't collide. Cheap (single API call).
+      const id = await fetchNextId();
+      const walk = buildWalkRecord(formData, id);
+
+      setPublishStatus(`Committing walk #${id} (${walk.slug}) to the repo…`, "working");
+
+      const files = [{
+        path: `walks/${pad3(id)}-${walk.slug}.json`,
+        content: JSON.stringify(walk, null, 2) + "\n",
+      }];
+      if (state.gpx) {
+        files.push({
+          path: `walks/gpx/${walk.slug}.gpx`,
+          content: state.gpx.text,
+        });
+      }
+
+      const message = state.gpx
+        ? `Add walk: ${walk.name} (#${id}) + GPX`
+        : `Add walk: ${walk.name} (#${id})`;
+
+      const sha = await ghCommit({ files, message });
+
+      // Success — clear the draft (otherwise the next "new walk" reopens with
+      // the just-published one's text).
+      try { localStorage.removeItem(DRAFT_KEY); } catch {}
+
+      const liveUrl = `/walks/${walk.slug}.html`;
+      const actionsUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/actions`;
+      setPublishStatus(
+        `<strong>Committed ✓</strong> commit <code>${sha.slice(0,7)}</code>. ` +
+        `GitHub Actions is now rebuilding the site (~1 minute). ` +
+        `Watch progress in the <a href="${actionsUrl}" target="_blank" rel="noopener noreferrer">Actions tab</a>, ` +
+        `then visit <a href="${liveUrl}" target="_blank" rel="noopener noreferrer">${liveUrl}</a> when it's green.`,
+        "ok"
+      );
+
+      // Reset form for the next walk
+      form.reset();
+      state.gpx = null;
+      byId("gpx-drop")?.classList.remove("has-file");
+      setGpxStatus("", "");
+      const slugEl = byId("slug-preview");
+      if (slugEl) slugEl.textContent = "—";
+      // Bump the next-id pill so the user sees what's next
+      const nidEl = byId("app-next-id");
+      if (nidEl) nidEl.textContent = id + 1;
+    } catch (err) {
+      console.error(err);
+      setPublishStatus(
+        `<strong>Publish failed.</strong> ${err.message || err}<br>` +
+        `Your form data is still saved as a draft — refresh and try again.`,
+        "err"
+      );
+    } finally {
+      state.publishing = false;
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Save & publish"; }
+    }
+  }
+
+  async function bootEditorApp() {
+    bindForm();
+    bindGpx();
+    // Show "ID will be N" up front so the user knows what they're creating.
+    const nidEl = byId("app-next-id");
+    if (nidEl) nidEl.textContent = "…";
+    try {
+      state.nextId = await fetchNextId();
+      if (nidEl) nidEl.textContent = state.nextId;
+    } catch (err) {
+      console.warn("[editor] couldn't pre-fetch next ID:", err);
+      if (nidEl) nidEl.textContent = "(checked at save time)";
+    }
+  }
+
+  // Wrap the existing route() so that whenever we land on the app gate, we
+  // also boot the form (only once per page load).
+  const originalRoute = route;
+  let appBooted = false;
+  route = function () {
+    originalRoute();
+    if (!appBooted && state.session && state.isEditor && state.pat) {
+      appBooted = true;
+      bootEditorApp();
+    }
+  };
 
   // ----- init -----
 
