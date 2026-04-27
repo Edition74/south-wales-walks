@@ -407,6 +407,17 @@ for rec in data:
     if rec["lat"] is not None: _geocoded += 1
 print(f"  walks with usable lat/lon: {_geocoded}/{len(data)}")
 
+# ---------------------------------------------------------------------------
+# GPX files (task #46). Walks uploaded via the editor land at
+# walks/gpx/{slug}.gpx. We discover them here and attach a flag to each walk
+# record so walk_page_html() can render the Leaflet map with a polyline.
+# ---------------------------------------------------------------------------
+_gpx_dir = HERE / "walks" / "gpx"
+_available_gpx = {p.stem for p in _gpx_dir.glob("*.gpx")} if _gpx_dir.exists() else set()
+for rec in data:
+    rec["has_gpx"] = rec["slug"] in _available_gpx
+print(f"  walks with GPX track: {sum(1 for r in data if r['has_gpx'])}/{len(data)}")
+
 # Resolve the default anchor's coordinates so the JS can fall back to them.
 _anchor = _postcode_cache.get(_normalise_postcode(DEFAULT_POSTCODE), {})
 DEFAULT_ANCHOR = {
@@ -1623,10 +1634,46 @@ details[open].filters>summary::after{transform:rotate(180deg)}
   box-shadow:var(--shadow-sm);
 }
 .walk-map iframe{width:100%;height:100%;border:0;display:block}
-.walk-map-links{display:flex;gap:1rem;margin:.2rem 0 .5rem;flex-wrap:wrap}
+
+/* Leaflet map container — taller than 16/9 so contour detail reads well */
+.walk-leaflet{
+  margin:.8rem 0 .25rem;border-radius:10px;overflow:hidden;
+  border:1px solid var(--border);height:380px;background:var(--stone);
+  box-shadow:var(--shadow-sm);
+}
+@media (max-width:560px){.walk-leaflet{height:300px}}
+/* Subtle Leaflet tweaks so attribution doesn't look out of place */
+.leaflet-container{font-family:"Inter",sans-serif;font-size:.8rem}
+.leaflet-control-attribution{font-size:.62rem;background:rgba(255,255,255,.85)}
+.leaflet-popup-content-wrapper{border-radius:8px;font-family:"Inter",sans-serif}
+.leaflet-popup-content{font-size:.85rem;line-height:1.45;margin:.6rem .8rem}
+
+/* Custom "P" trailhead pin — classic teardrop shape, bracken-coloured,
+   white "P" sitting upright. The divIcon's raw "P" text content is hidden
+   (font-size:0) and a ::before pseudo provides the visible counter-rotated P. */
+.walk-start-pin-wrap{background:transparent;border:0}
+.walk-start-pin{
+  width:30px;height:30px;border-radius:50% 50% 50% 0;
+  background:var(--bracken);border:2px solid #fff;
+  transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.35);
+  display:flex;align-items:center;justify-content:center;
+  font-size:0;  /* hide the raw "P" text node */
+}
+.walk-start-pin::before{
+  content:"P";display:inline-block;
+  font-family:"Inter",sans-serif;font-size:.85rem;font-weight:700;color:#fff;
+  transform:rotate(45deg);  /* counter-rotate so P stays upright */
+  line-height:1;
+}
+
+.walk-map-links{display:flex;gap:1rem;align-items:center;margin:.2rem 0 .5rem;flex-wrap:wrap}
 .walk-map-links a{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;
   color:var(--bracken);font-weight:700;padding:.2rem 0}
 .walk-map-links a:hover{color:var(--bracken-dark);text-decoration:underline}
+.walk-map-gpx-note{font-size:.7rem;color:var(--muted);font-weight:600;display:inline-flex;
+  align-items:center;gap:.35rem;letter-spacing:.05em}
+.walk-map-gpx-note .dot-track{display:inline-block;width:1.4rem;height:3px;background:var(--bracken);
+  border-radius:2px}
 .walk-credits{font-size:.7rem;color:var(--muted);margin:.3rem 0 .6rem;line-height:1.4}
 .walk-credits a{color:var(--muted);text-decoration:underline;text-decoration-color:var(--stone)}
 .walk-credits a:hover{color:var(--bracken)}
@@ -2633,11 +2680,13 @@ def walk_page_html(walk):
         if tags else ""
     )
 
-    # --- Maps (Google for directions, Google embed for the iframe) ---
+    # --- Maps (Leaflet + OpenTopoMap for the inline map; Google for directions) ---
     q_parts = [p for p in [walk.get("postcode"), walk.get("name"), "UK"] if p]
     q_str   = ", ".join(str(p) for p in q_parts)
     directions_url = "https://www.google.com/maps?q=" + urllib.parse.quote_plus(q_str)
-    embed_url      = "https://maps.google.com/maps?q=" + urllib.parse.quote_plus(q_str) + "&output=embed"
+    # Walk pages live at /walks/{slug}.html; GPX files at /walks/gpx/{slug}.gpx
+    # → relative URL is just gpx/{slug}.gpx
+    gpx_url = f"gpx/{walk['slug']}.gpx" if walk.get("has_gpx") else ""
 
     # --- Photo gallery + credits ---
     images  = walk.get("images") or []
@@ -2672,13 +2721,36 @@ def walk_page_html(walk):
     else:
         photos_section = ""
 
-    # --- Map section ---
+    # --- Map section: Leaflet + OpenTopoMap, with GPX overlay if present.
+    # The trailhead pin always renders (anchored on the geocoded postcode).
+    # The GPX polyline only renders if walks/gpx/{slug}.gpx exists in the
+    # repo. The "Open in Google Maps" link stays for routing/directions.
+    has_coords = walk.get("lat") is not None and walk.get("lon") is not None
+    if has_coords:
+        gpx_attr = f' data-gpx="{esc(gpx_url)}"' if gpx_url else ''
+        gpx_note = ('<span class="walk-map-gpx-note">'
+                    '<span class="dot-track"></span> Trail track shown</span>'
+                    if gpx_url else '')
+        map_inner = (
+            f'<div class="walk-leaflet" data-lat="{walk["lat"]}" data-lon="{walk["lon"]}"'
+            f' data-name="{esc(walk["name"])}"{gpx_attr} aria-label="Map for {esc(walk["name"])}"></div>'
+        )
+    else:
+        # No geocoded coords (rare — postcode lookup failed). Fall back to
+        # Google embed so the page isn't a blank rectangle.
+        embed_url = "https://maps.google.com/maps?q=" + urllib.parse.quote_plus(q_str) + "&output=embed"
+        map_inner = (
+            f'<div class="walk-map"><iframe src="{esc(embed_url)}" loading="lazy" '
+            f'referrerpolicy="no-referrer-when-downgrade"></iframe></div>'
+        )
+        gpx_note = ''
     map_section = f'''
     <section class="walk-section">
       <h2>On the map</h2>
-      <div class="walk-map"><iframe src="{esc(embed_url)}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe></div>
+      {map_inner}
       <div class="walk-map-links">
         <a href="{esc(directions_url)}" target="_blank" rel="noopener noreferrer">Open in Google Maps ↗</a>
+        {gpx_note}
       </div>
     </section>'''
 
@@ -2801,6 +2873,11 @@ def walk_page_html(walk):
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Inter:wght@400;500;600;700&display=swap">
+<!-- Leaflet (~40 KB) for the inline trail map. CDN, no API key. -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
 <style>
 {SHARED_CSS}
 </style>
@@ -2946,6 +3023,65 @@ if (window.ratings) window.ratings.init();
       if (dd) dd.textContent = mins + ' min (≈)';
     }}
   }});
+}})();
+
+// Leaflet inline map (task #46). Renders OpenTopoMap tiles, drops a "P"
+// trailhead pin at the geocoded postcode, and overlays the GPX trkpt
+// polyline if a GPX file is shipped for this walk. Falls back gracefully
+// when Leaflet didn't load (CDN blocked, offline preview, etc) — the
+// "Open in Google Maps" link below the map handles that case.
+(function () {{
+  var el = document.querySelector('.walk-leaflet');
+  if (!el || typeof L === 'undefined') return;
+  var lat = parseFloat(el.dataset.lat), lon = parseFloat(el.dataset.lon);
+  if (!isFinite(lat) || !isFinite(lon)) return;
+
+  var map = L.map(el, {{ scrollWheelZoom: false }}).setView([lat, lon], 14);
+  L.tileLayer('https://{{s}}.tile.opentopomap.org/{{z}}/{{x}}/{{y}}.png', {{
+    attribution: 'Map: &copy; <a href="https://opentopomap.org/">OpenTopoMap</a> ' +
+                 '(<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>) · ' +
+                 'Data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 17,
+  }}).addTo(map);
+
+  // Custom "P" parking pin — clear visual marker for the trailhead.
+  var startIcon = L.divIcon({{
+    className: 'walk-start-pin-wrap',
+    html: '<div class="walk-start-pin" aria-hidden="true">P</div>',
+    iconSize:   [30, 38],
+    iconAnchor: [15, 38],
+    popupAnchor:[0, -36],
+  }});
+  L.marker([lat, lon], {{ icon: startIcon, alt: 'Start / car park' }})
+    .addTo(map)
+    .bindPopup('<strong>' + (el.dataset.name || 'Trailhead') + '</strong><br>Start / car park');
+
+  // GPX overlay (if shipped). Parse trkpt/rtept points client-side and
+  // draw as a single polyline. We don't bother with multi-segment styling
+  // for MVP — one continuous track per walk is the common case.
+  var gpxUrl = el.dataset.gpx;
+  if (gpxUrl) {{
+    fetch(gpxUrl).then(function (r) {{
+      return r.ok ? r.text() : Promise.reject(new Error('GPX fetch ' + r.status));
+    }}).then(function (text) {{
+      var doc = new DOMParser().parseFromString(text, 'application/xml');
+      var pts = [];
+      doc.querySelectorAll('trkpt, rtept').forEach(function (n) {{
+        var la = parseFloat(n.getAttribute('lat'));
+        var lo = parseFloat(n.getAttribute('lon'));
+        if (isFinite(la) && isFinite(lo)) pts.push([la, lo]);
+      }});
+      if (!pts.length) return;
+      var line = L.polyline(pts, {{
+        color: '#b45a2a', weight: 4, opacity: 0.85, lineJoin: 'round',
+      }}).addTo(map);
+      // Fit the map to the trail with a little padding so the polyline
+      // and the start pin are both fully visible.
+      map.fitBounds(line.getBounds(), {{ padding: [24, 24] }});
+    }}).catch(function (err) {{
+      console.warn('[walk] GPX overlay failed:', err);
+    }});
+  }}
 }})();
 </script>
 
