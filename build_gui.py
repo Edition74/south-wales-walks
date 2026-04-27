@@ -2689,11 +2689,23 @@ def walk_page_html(walk):
     gpx_url = f"gpx/{walk['slug']}.gpx" if walk.get("has_gpx") else ""
 
     # --- Photo gallery + credits ---
+    # The cached Wikimedia URLs sometimes have raw spaces in the filename
+    # portion — modern browsers refuse those. Re-encode the path while
+    # preserving any %XX sequences already in there (so existing %2C etc
+    # don't get double-encoded into %252C).
+    def _safe_img_url(u):
+        if not u: return ""
+        p = urllib.parse.urlsplit(u)
+        return urllib.parse.urlunsplit((
+            p.scheme, p.netloc,
+            urllib.parse.quote(p.path, safe="/%"),
+            p.query, p.fragment,
+        ))
     images  = walk.get("images") or []
     credits = walk.get("photo_credits") or []
     if images:
         gallery_imgs = "".join(
-            f'<img src="{esc(src)}" alt="{esc(walk["name"])}" loading="lazy">'
+            f'<img src="{esc(_safe_img_url(src))}" alt="{esc(walk["name"])}" loading="lazy">'
             for src in images
         )
         if credits:
