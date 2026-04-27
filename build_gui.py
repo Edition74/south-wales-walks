@@ -20,7 +20,13 @@ from openpyxl import load_workbook
 HERE = Path(__file__).parent
 XLSX = HERE / "South_Wales_Walks_Database.xlsx"
 OUT  = HERE / "index.html"
-PHOTOS_CACHE = HERE / "photos_cache.json"
+PHOTOS_CACHE   = HERE / "photos_cache.json"
+POSTCODE_CACHE = HERE / "postcode_cache.json"
+
+# Default "drive from" anchor when the user hasn't entered their own postcode.
+# NP25 3NT = Monmouth (where the curated `drive_from_monmouth_mins` values
+# are anchored on). Lat/lon is filled in by the geocoding step below.
+DEFAULT_POSTCODE = "NP25 3NT"
 
 # Ratings backend — injected into the client bundle. Safe to be public: the
 # anon key is designed for browsers (row-level security is what keeps the
@@ -324,6 +330,91 @@ print(f"  condition flags: {dict(_flag_counts.most_common())}")
 print(f"  schedule-dependent (no fixed best months): "
       f"{sum(1 for r in data if not r['best_months'])}")
 print(f"  with peak notes: {sum(1 for r in data if r['peak_note'])}")
+
+# ---------------------------------------------------------------------------
+# Postcode geocoding (task #47).
+#
+# Every walk has a `start_postcode` field. The "Drive from..." filter on the
+# listing page used to be anchored on Monmouth (NP25 3NT) using hand-curated
+# drive times. We now let the user type their own postcode in the filter and
+# recompute distances client-side. To do that, the browser needs lat/lon for
+# each walk's start postcode.
+#
+# postcodes.io is a free, public, UK-only postcode lookup service (no API
+# key, no rate limits to speak of for build-time bulk lookups). We cache to
+# postcode_cache.json so repeat builds are a no-op for known postcodes; only
+# new walks (added via the editor) trigger a network call.
+# ---------------------------------------------------------------------------
+import urllib.request  # noqa: E402
+
+try:
+    _postcode_cache = json.loads(POSTCODE_CACHE.read_text(encoding="utf-8")) \
+        if POSTCODE_CACHE.exists() else {}
+except Exception:
+    _postcode_cache = {}
+
+def _normalise_postcode(pc):
+    """Postcodes.io is case+space insensitive but we normalise for cache keys."""
+    return " ".join(str(pc or "").upper().split())
+
+# Collect every postcode we need lat/lon for: all walks + the default anchor.
+_needed = set()
+for rec in data:
+    pc = _normalise_postcode(rec.get("postcode"))
+    if pc: _needed.add(pc)
+_needed.add(_normalise_postcode(DEFAULT_POSTCODE))
+
+_to_fetch = sorted(_needed - set(_postcode_cache.keys()))
+if _to_fetch:
+    print(f"  geocoding {len(_to_fetch)} new postcode(s) via postcodes.io…")
+    # Bulk endpoint takes up to 100 postcodes per request.
+    for i in range(0, len(_to_fetch), 100):
+        batch = _to_fetch[i:i+100]
+        body = json.dumps({"postcodes": batch}).encode("utf-8")
+        try:
+            req = urllib.request.Request(
+                "https://api.postcodes.io/postcodes",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=15) as r:
+                payload = json.loads(r.read().decode("utf-8"))
+            for entry in payload.get("result", []):
+                key = _normalise_postcode(entry.get("query"))
+                res = entry.get("result")
+                if res and res.get("latitude") is not None:
+                    _postcode_cache[key] = {
+                        "lat":  res["latitude"],
+                        "lon":  res["longitude"],
+                        "town": res.get("admin_district") or res.get("parish"),
+                    }
+                else:
+                    # Negative caching so we don't re-hit on every build.
+                    _postcode_cache[key] = {"lat": None, "lon": None}
+            POSTCODE_CACHE.write_text(json.dumps(_postcode_cache, indent=2, sort_keys=True), encoding="utf-8")
+        except Exception as e:
+            print(f"    !! geocoding batch {i//100 + 1} failed: {e}")
+else:
+    print(f"  postcode cache hit: {len(_needed)} postcodes already cached")
+
+# Attach lat/lon to each walk record so it lands in WALKS JSON for the JS.
+_geocoded = 0
+for rec in data:
+    entry = _postcode_cache.get(_normalise_postcode(rec.get("postcode")), {})
+    rec["lat"] = entry.get("lat")
+    rec["lon"] = entry.get("lon")
+    if rec["lat"] is not None: _geocoded += 1
+print(f"  walks with usable lat/lon: {_geocoded}/{len(data)}")
+
+# Resolve the default anchor's coordinates so the JS can fall back to them.
+_anchor = _postcode_cache.get(_normalise_postcode(DEFAULT_POSTCODE), {})
+DEFAULT_ANCHOR = {
+    "postcode": DEFAULT_POSTCODE,
+    "lat": _anchor.get("lat"),
+    "lon": _anchor.get("lon"),
+    "town": _anchor.get("town") or "Monmouth",
+}
 
 # ---------------------------------------------------------------------------
 # Region metadata: short name, tagline, accent colour, Unsplash image.
@@ -1177,6 +1268,21 @@ details[open].filters>summary::after{transform:rotate(180deg)}
 .range-wrap{display:flex;align-items:center;gap:.7rem}
 .range-wrap input[type=range]{flex:1;accent-color:var(--moss);height:3px}
 .range-wrap .val{min-width:66px;text-align:right;font-variant-numeric:tabular-nums;font-size:.82rem;color:var(--muted);font-weight:600}
+
+/* Inline postcode input for the "Drive from..." filter */
+.postcode-inline{
+  font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  width:6.5rem;padding:.18rem .45rem;margin-left:.4rem;
+  background:var(--paper);color:var(--ink);border:1px solid var(--border);
+  border-radius:5px;outline:none;transition:border-color .15s
+}
+.postcode-inline:focus{border-color:var(--bracken)}
+.postcode-inline:invalid:not(:placeholder-shown){border-color:#c97b50;color:#8b3f17}
+.postcode-status{font-size:.65rem;font-weight:600;letter-spacing:.04em;color:var(--muted);
+  margin-left:.4rem;text-transform:none}
+.postcode-status.ok{color:var(--moss-2)}
+.postcode-status.err{color:#8b3f17}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 @media(max-width:620px){.two-col{grid-template-columns:1fr}}
 .ck-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.4rem .9rem}
@@ -1668,7 +1774,13 @@ footer.site{background:var(--slate);color:var(--cream);padding:3.5rem 0 2rem;mar
       <div class="f-body">
         <div class="two-col">
           <div class="f-group">
-            <span class="lbl">Drive from Monmouth NP25 3NT</span>
+            <span class="lbl">Drive from
+              <input type="text" id="drive-postcode" class="postcode-inline"
+                pattern="[A-Za-z]{1,2}[0-9][A-Za-z0-9]? ?[0-9][A-Za-z]{2}"
+                placeholder="NP25 3NT" autocapitalize="characters"
+                aria-label="Your postcode for drive-time calculations" maxlength="9">
+              <span id="drive-postcode-status" class="postcode-status"></span>
+            </span>
             <div class="range-wrap">
               <input type="range" id="drive-max" min="0" max="__MAX_DRIVE__" step="5" value="__MAX_DRIVE__">
               <span class="val" id="drive-val">Any</span>
@@ -1720,7 +1832,7 @@ footer.site{background:var(--slate);color:var(--cream);padding:3.5rem 0 2rem;mar
           <div class="f-group">
             <span class="lbl">Sort by</span>
             <select id="sort">
-              <option value="drive">Drive from Monmouth (closest first)</option>
+              <option value="drive">Drive (closest first)</option>
               <option value="name">Name (A–Z)</option>
               <option value="miles-asc">Distance (shortest first)</option>
               <option value="miles-desc">Distance (longest first)</option>
@@ -1781,6 +1893,7 @@ const TAGS = __TAGS_JSON__;
 const REGION_ACCENT = __REGION_ACCENT_JSON__;
 const REGION_SHORT  = __REGION_SHORT_JSON__;
 const CONDITION_META = __CONDITION_META_JSON__;
+const DEFAULT_ANCHOR = __DEFAULT_ANCHOR_JSON__;  // {postcode, lat, lon, town}
 const CURRENT_MONTH = new Date().getMonth() + 1;  // 1..12, recomputed on every page load
 const MONTH_NAMES = ["January","February","March","April","May","June",
                      "July","August","September","October","November","December"];
@@ -2046,7 +2159,7 @@ function apply(){
       const tset = new Set(w.tags || []);
       if (!tags.every(t => tset.has(t))) return false;
     }
-    if (maxDrive < Number($("#drive-max").max) && (w.drive ?? 999) > maxDrive) return false;
+    if (maxDrive < Number($("#drive-max").max) && driveMins(w) > maxDrive) return false;
     if (maxMiles < Number($("#dist-max").max) && (w.miles  ?? 999) > maxMiles) return false;
     if (maxElev  < Number($("#elev-max").max) && (w.elev   ?? 999) > maxElev)  return false;
     if (needDogs && String(w.dogs).toLowerCase() !== "yes") return false;
@@ -2064,7 +2177,7 @@ function apply(){
   });
 
   const keys = {
-    "drive":      (a,b) => (a.drive||999) - (b.drive||999),
+    "drive":      (a,b) => driveMins(a) - driveMins(b),
     "name":       (a,b) => a.name.localeCompare(b.name),
     "miles-asc":  (a,b) => (a.miles||0) - (b.miles||0),
     "miles-desc": (a,b) => (b.miles||0) - (a.miles||0),
@@ -2073,6 +2186,149 @@ function apply(){
   };
   out.sort(keys[sort] || keys["drive"]);
   render(out);
+}
+
+// ─── Drive-time anchoring (task #47) ────────────────────────────────────
+// The "Drive from..." filter used to be hard-anchored on Monmouth (NP25 3NT)
+// using hand-curated drive_from_monmouth_mins values per walk. Now the user
+// can type their own postcode and we recompute drive times client-side using
+// haversine distance × heuristic. The curated Monmouth times stay as a more
+// accurate fallback when the user hasn't entered anything.
+const DRIVE_ANCHOR_KEY = "swwDriveAnchor";  // localStorage key
+
+const driveAnchor = {
+  postcode: DEFAULT_ANCHOR.postcode,
+  lat:      DEFAULT_ANCHOR.lat,
+  lon:      DEFAULT_ANCHOR.lon,
+  town:     DEFAULT_ANCHOR.town,
+  isDefault: true,
+};
+
+function haversineKm(lat1, lon1, lat2, lon2){
+  const R = 6371, toRad = (d) => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Estimate drive minutes from straight-line distance. UK roads are roughly
+// 1.4× crow-flight; door-to-door averages ~50 km/h on the kind of routes
+// people drive to a walk. Round to the nearest 5 min so the number doesn't
+// look false-precise.
+function estimateDriveMins(km){
+  const m = (km * 1.4) / 50 * 60;
+  return Math.max(5, Math.round(m / 5) * 5);
+}
+
+// Drive minutes from the current anchor to a walk. Falls back to the
+// curated Monmouth value when the anchor is the default and the walk
+// has a curated time, since that's more accurate than the heuristic.
+function driveMins(w){
+  if (driveAnchor.isDefault && typeof w.drive === "number" && w.drive < 999) return w.drive;
+  if (driveAnchor.lat == null || w.lat == null) {
+    return (typeof w.drive === "number" && w.drive < 999) ? w.drive : 999;
+  }
+  return estimateDriveMins(haversineKm(driveAnchor.lat, driveAnchor.lon, w.lat, w.lon));
+}
+
+// Label for the drive-time stat on cards/details (e.g. "from NP25 3NT").
+function driveAnchorLabel(){
+  return driveAnchor.isDefault ? "from " + driveAnchor.postcode : "from " + driveAnchor.postcode;
+}
+
+function isValidUkPostcode(s){
+  return /^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$/.test(String(s || "").toUpperCase().trim());
+}
+
+function normalisePostcode(s){
+  return String(s || "").toUpperCase().replace(/\s+/g, " ").trim();
+}
+
+async function geocodePostcode(pc){
+  // Browser-side cache so repeat lookups (same user, same session) cost nothing.
+  let cache = {};
+  try { cache = JSON.parse(localStorage.getItem("swwPostcodeGeo") || "{}"); } catch {}
+  const key = normalisePostcode(pc);
+  if (cache[key]) return cache[key];
+  const url = "https://api.postcodes.io/postcodes/" + encodeURIComponent(key);
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("postcodes.io returned " + r.status);
+  const body = await r.json();
+  const res = body.result;
+  if (!res || res.latitude == null) throw new Error("No coordinates returned");
+  const out = { postcode: res.postcode, lat: res.latitude, lon: res.longitude,
+                town: res.admin_district || res.parish || "" };
+  cache[key] = out;
+  try { localStorage.setItem("swwPostcodeGeo", JSON.stringify(cache)); } catch {}
+  return out;
+}
+
+function setDriveAnchor(geo){
+  driveAnchor.postcode = geo.postcode;
+  driveAnchor.lat      = geo.lat;
+  driveAnchor.lon      = geo.lon;
+  driveAnchor.town     = geo.town;
+  driveAnchor.isDefault = normalisePostcode(geo.postcode) === normalisePostcode(DEFAULT_ANCHOR.postcode);
+  // Persist (only when non-default — clears back to default if same as Monmouth)
+  try {
+    if (driveAnchor.isDefault) localStorage.removeItem(DRIVE_ANCHOR_KEY);
+    else                       localStorage.setItem(DRIVE_ANCHOR_KEY, JSON.stringify(geo));
+  } catch {}
+}
+
+async function bindDrivePostcode(){
+  const input  = $("#drive-postcode");
+  const status = $("#drive-postcode-status");
+  if (!input) return;
+
+  // Restore previous anchor (if any) on page load
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(DRIVE_ANCHOR_KEY) || "null"); } catch {}
+  if (stored && typeof stored.lat === "number") {
+    setDriveAnchor(stored);
+    input.value = stored.postcode || "";
+    if (status) status.textContent = stored.town ? "≈ from " + stored.town : "";
+  } else {
+    input.placeholder = DEFAULT_ANCHOR.postcode;
+    if (status) status.textContent = DEFAULT_ANCHOR.town ? "≈ from " + DEFAULT_ANCHOR.town : "";
+  }
+
+  // Live-uppercase
+  input.addEventListener("input", () => {
+    const start = input.selectionStart;
+    input.value = input.value.toUpperCase();
+    input.setSelectionRange?.(start, start);
+  });
+
+  // Geocode on blur or Enter
+  let lastSubmitted = input.value;
+  const submit = async () => {
+    const v = normalisePostcode(input.value);
+    if (v === lastSubmitted) return;
+    lastSubmitted = v;
+    if (!v) {
+      // Cleared — revert to default anchor
+      setDriveAnchor(DEFAULT_ANCHOR);
+      if (status) { status.textContent = "≈ from " + (DEFAULT_ANCHOR.town || "Monmouth"); status.className = "postcode-status"; }
+      apply();
+      return;
+    }
+    if (!isValidUkPostcode(v)) {
+      if (status) { status.textContent = "Not a valid UK postcode"; status.className = "postcode-status err"; }
+      return;
+    }
+    if (status) { status.textContent = "Looking up…"; status.className = "postcode-status"; }
+    try {
+      const geo = await geocodePostcode(v);
+      setDriveAnchor(geo);
+      if (status) { status.textContent = geo.town ? "≈ from " + geo.town : "Found"; status.className = "postcode-status ok"; }
+      apply();
+    } catch (err) {
+      if (status) { status.textContent = "Couldn't find that postcode"; status.className = "postcode-status err"; }
+    }
+  };
+  input.addEventListener("blur", submit);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submit(); }});
 }
 
 // True when the walk is in season for the current calendar month. Empty
@@ -2120,7 +2376,7 @@ function walkCard(w){
           <div class="si"><span class="si-val">${w.miles}</span><span class="si-lbl">miles</span></div>
           <div class="si"><span class="si-val">${w.elev}</span><span class="si-lbl">m ascent</span></div>
           <div class="si"><span class="si-val">${w.time}</span><span class="si-lbl">hours</span></div>
-          <div class="si"><span class="si-val">${w.drive ?? '?'}</span><span class="si-lbl">min drive</span></div>
+          <div class="si"><span class="si-val">${driveMins(w)}</span><span class="si-lbl">${driveAnchor.isDefault ? 'min drive' : 'min · ' + driveAnchor.postcode}</span></div>
         </div>
         <p class="feat-line">${esc(w.features || "")}</p>
         <div class="tag-row">${tagsHtml}</div>
@@ -2167,7 +2423,7 @@ function render(list){
         <h4>Search or filter to see walks.</h4>
         <p>All ${WALKS.length} walks are ready to explore. Search for a place, tap a region tile above, or try a quick start:</p>
         <div class="welcome-chips">
-          <button type="button" onclick="quickFilter('near')">Within 1hr of Monmouth</button>
+          <button type="button" onclick="quickFilter('near')">Within 1hr drive</button>
           <button type="button" onclick="quickFilter('Family Friendly')">Family friendly</button>
           <button type="button" onclick="quickFilter('Waterfall')">Waterfalls</button>
           <button type="button" onclick="quickFilter('Beach / Coastal')">Coastal</button>
@@ -2201,6 +2457,11 @@ function render(list){
 // `input` events on the sliders, which call apply() — so we only need to
 // call apply() ourselves on a fresh visit. Wrapped in pageshow so that
 // browser bfcache returns also restore state correctly.
+// Wire up the drive-from postcode input first so the stored anchor is in
+// place before the first filter pass — otherwise initial card render uses
+// Monmouth distances even when the user has saved their own postcode.
+bindDrivePostcode();
+
 if (!restoreListingState()) {
   apply();
 }
@@ -2246,6 +2507,7 @@ HTML = (HTML
     .replace("__REGION_ACCENT_JSON__", json.dumps(region_accent_js, ensure_ascii=False))
     .replace("__REGION_SHORT_JSON__", json.dumps(region_short_js, ensure_ascii=False))
     .replace("__CONDITION_META_JSON__", json.dumps(CONDITION_META, ensure_ascii=False))
+    .replace("__DEFAULT_ANCHOR_JSON__", json.dumps(DEFAULT_ANCHOR, ensure_ascii=False))
     .replace("__INJECT_SUPABASE_URL__", SUPABASE_URL)
     .replace("__INJECT_SUPABASE_ANON_KEY__", SUPABASE_ANON_KEY)
 )
@@ -2566,7 +2828,9 @@ def walk_page_html(walk):
       <div class="si"><span class="si-val">{miles}</span><span class="si-lbl">miles</span></div>
       <div class="si"><span class="si-val">{elev}</span><span class="si-lbl">m ascent</span></div>
       <div class="si"><span class="si-val">{time_}</span><span class="si-lbl">hours</span></div>
-      <div class="si"><span class="si-val">{drive}</span><span class="si-lbl">min drive</span></div>
+      <div class="si" data-stat-drive data-walk-lat="{walk.get('lat') if walk.get('lat') is not None else ''}" data-walk-lon="{walk.get('lon') if walk.get('lon') is not None else ''}">
+        <span class="si-val">{drive}</span><span class="si-lbl">min drive</span>
+      </div>
     </div>
 
     {features_block}
@@ -2645,6 +2909,36 @@ if (window.ratings) window.ratings.init();
   var m = new Date().getMonth() + 1;
   var box = document.querySelector('.month-bar [data-month="' + m + '"]');
   if (box) box.classList.add('now');
+}})();
+
+// Re-anchor the drive stat to the user's saved postcode (set on the listing
+// page). Walk pages are static HTML, so this runs at view time and silently
+// no-ops if the user is still anchored on the default (Monmouth).
+(function () {{
+  var stored = null;
+  try {{ stored = JSON.parse(localStorage.getItem('swwDriveAnchor') || 'null'); }} catch (e) {{}}
+  if (!stored || typeof stored.lat !== 'number') return;
+  var el = document.querySelector('[data-stat-drive]');
+  if (!el) return;
+  var lat = parseFloat(el.dataset.walkLat), lon = parseFloat(el.dataset.walkLon);
+  if (!isFinite(lat) || !isFinite(lon)) return;
+  var R = 6371, toRad = function (d) {{ return d * Math.PI / 180; }};
+  var dLat = toRad(lat - stored.lat), dLon = toRad(lon - stored.lon);
+  var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+          Math.cos(toRad(stored.lat)) * Math.cos(toRad(lat)) *
+          Math.sin(dLon/2) * Math.sin(dLon/2);
+  var km = 2 * R * Math.asin(Math.sqrt(a));
+  var mins = Math.max(5, Math.round((km * 1.4) / 50 * 60 / 5) * 5);
+  el.querySelector('.si-val').textContent = mins;
+  el.querySelector('.si-lbl').textContent = 'min · ' + (stored.postcode || 'you');
+  // Also update the matching detail-list row if it's there.
+  document.querySelectorAll('.walk-detail-list dt').forEach(function (dt) {{
+    if (/^Drive from/.test(dt.textContent)) {{
+      dt.textContent = 'Drive from ' + (stored.postcode || 'your postcode');
+      var dd = dt.nextElementSibling;
+      if (dd) dd.textContent = mins + ' min (≈)';
+    }}
+  }});
 }})();
 </script>
 
