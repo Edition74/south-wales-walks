@@ -2401,6 +2401,10 @@ function hasActiveFilter(){
   if (["dogs-yes","offlead","pushchair","family","in-season"].some(id => $("#"+id).checked)) return true;
   const atMax = id => Number($("#"+id).value) >= Number($("#"+id).max);
   if (!atMax("drive-max") || !atMax("dist-max") || !atMax("elev-max")) return true;
+  // A custom drive-from postcode is a clear "show me walks" signal even
+  // when no slider is engaged — otherwise sliding drive-from back to "Any"
+  // hides everything behind the welcome card.
+  if (driveAnchor && !driveAnchor.isDefault) return true;
   return false;
 }
 
