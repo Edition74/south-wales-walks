@@ -1898,6 +1898,19 @@ const CURRENT_MONTH = new Date().getMonth() + 1;  // 1..12, recomputed on every 
 const MONTH_NAMES = ["January","February","March","April","May","June",
                      "July","August","September","October","November","December"];
 
+// ─── Drive-time anchoring (task #47) ────────────────────────────────────
+// Declared up here (above bindRange / apply / walkCard) so the synchronous
+// init pass — bindRange("drive-max") fires update() which calls apply() —
+// can see the anchor without hitting a temporal-dead-zone error.
+const DRIVE_ANCHOR_KEY = "swwDriveAnchor";  // localStorage key
+const driveAnchor = {
+  postcode:  DEFAULT_ANCHOR.postcode,
+  lat:       DEFAULT_ANCHOR.lat,
+  lon:       DEFAULT_ANCHOR.lon,
+  town:      DEFAULT_ANCHOR.town,
+  isDefault: true,
+};
+
 const $ = q => document.querySelector(q);
 const $$ = q => document.querySelectorAll(q);
 
@@ -2188,22 +2201,12 @@ function apply(){
   render(out);
 }
 
-// ─── Drive-time anchoring (task #47) ────────────────────────────────────
+// ─── Drive-time anchoring helpers (state declared near top of script) ──
 // The "Drive from..." filter used to be hard-anchored on Monmouth (NP25 3NT)
 // using hand-curated drive_from_monmouth_mins values per walk. Now the user
 // can type their own postcode and we recompute drive times client-side using
 // haversine distance × heuristic. The curated Monmouth times stay as a more
 // accurate fallback when the user hasn't entered anything.
-const DRIVE_ANCHOR_KEY = "swwDriveAnchor";  // localStorage key
-
-const driveAnchor = {
-  postcode: DEFAULT_ANCHOR.postcode,
-  lat:      DEFAULT_ANCHOR.lat,
-  lon:      DEFAULT_ANCHOR.lon,
-  town:     DEFAULT_ANCHOR.town,
-  isDefault: true,
-};
-
 function haversineKm(lat1, lon1, lat2, lon2){
   const R = 6371, toRad = (d) => d * Math.PI / 180;
   const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
